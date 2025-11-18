@@ -1,7 +1,4 @@
-// 1) Replace this with your published Google Sheets CSV URL
-// Make sure it ends with something like: .../pub?output=csv
-const CSV_URL =
-https://docs.google.com/spreadsheets/d/e/2PACX-1vTeC5eZxa23_nAI0UMbuLofZyoNHHpYuAsagqV5cMS15UkgTUl290Ntxu6bVwUly-RWoGYWCcxQVeCe/pubhtml
+const CSV_URL = "data.csv";
 
 let rawData = [];
 let filteredData = [];
