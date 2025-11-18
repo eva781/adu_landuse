@@ -1,20 +1,40 @@
+// ==========================
+// CONFIG
+// ==========================
+
+// We're loading CSV that lives in the repo root:
+// you uploaded data.csv already.
 const CSV_URL = "data.csv";
 
-let rawData = [];
-let filteredData = [];
-let headerMap = {}; // maps logical fields -> actual CSV header names
+// Column names in your sheet (must match exactly)
+const COL = {
+  city: "City",
+  zone: "Zone",
+  zoneType: "Zone_Type",
+  aduAllowed: "ADU_Allowed",
+  daduAllowed: "DADU_Allowed",
+  maxADUs: "Max_ADUs_Per_Lot",
+  maxADUSize: "Max_ADU_Size_Sqft",
+  maxDADUSize: "Max_DADU_Size_Sqft",
+  minLotSize: "Min_Lot_Size_Sqft",
+  minParking: "Min_Parking_Spaces",
+  ownerOcc: "Owner_Occupancy_Required",
+  heightPrimary: "Max_Building_Height_Primary_ft",
+  heightDADU: "DADU_Max_Height_ft",
+  frontSetback: "Min_Front_Setback_ft",
+  sideSetback: "Min_Side_Setback_ft",
+  rearSetback: "Min_Rear_Setback_ft",
+  codeSection: "Reference_Code_Section",
+  sourceURL: "Source_Document_URL",
+  notes: "Notes",
+};
 
-// ==========================================
-// CSV PARSER (handles quoted commas)
-// ==========================================
+// ==========================
+// CSV PARSER
+// ==========================
 
-function parseCSVWithHeaders(text) {
-  const rows = [];
-  let current = [];
-  let value = "";
-  let insideQuotes = false;
-  function parseCSVWithHeaders(text) {
-  // Strip BOM (Byte Order Mark) if present so first header isn't "﻿City"
+function parseCSV(text) {
+  // Strip BOM if present so first header isn't "﻿City"
   if (text.charCodeAt(0) === 0xfeff) {
     text = text.slice(1);
   }
@@ -23,7 +43,6 @@ function parseCSVWithHeaders(text) {
   let current = [];
   let value = "";
   let insideQuotes = false;
-
 
   const pushValue = () => {
     current.push(value);
@@ -76,61 +95,38 @@ function parseCSVWithHeaders(text) {
   return { headers, rows: dataRows };
 }
 
-// ==========================================
-// HEADER MAPPING (auto-detect columns)
-// ==========================================
+// ==========================
+// STATE
+// ==========================
 
-function inferHeaderMap(headers) {
-  const lowered = headers.map((h) => h.toLowerCase());
+let rawData = [];
+let filteredData = [];
 
-  const findHeader = (...candidates) => {
-    // exact match preferred
-    for (const candidate of candidates) {
-      const idx = lowered.indexOf(candidate.toLowerCase());
-      if (idx !== -1) return headers[idx];
-    }
-    // fallback: substring match
-    for (const candidate of candidates) {
-      for (let i = 0; i < lowered.length; i++) {
-        if (lowered[i].includes(candidate.toLowerCase())) {
-          return headers[i];
-        }
-      }
-    }
-    return null;
-  };
+// ==========================
+// HELPERS
+// ==========================
 
-  return {
-    city: findHeader("city", "municipality"),
-    zone: findHeader("zone", "zoning"),
-    zoneType: findHeader("zone_type", "zone type", "zone category"),
-    aduAllowed: findHeader("adu_allowed", "adu allowed"),
-    daduAllowed: findHeader("dadu_allowed", "dadu allowed", "detached adu allowed"),
-    maxADUs: findHeader("max_adus_per_lot", "max adus per lot"),
-    maxADUSize: findHeader("max_adu_size_sqft", "max adu size"),
-    minLotSize: findHeader("min_lot_size_sqft", "minimum lot size"),
-    minParking: findHeader("min_parking_spaces", "adu_parking_required", "min parking"),
-    ownerOcc: findHeader("owner_occupancy_required", "owner occupancy"),
-    heightPrimary: findHeader("max_building_height_primary_ft", "primary_height"),
-    heightDADU: findHeader("dadu_max_height_ft", "max_dadu_height_ft"),
-    frontSetback: findHeader("front_setback_ft", "front setback"),
-    sideSetback: findHeader("side_setback_ft", "side setback"),
-    rearSetback: findHeader("rear_setback_ft", "rear setback"),
-    codeSection: findHeader("reference_code_section", "code_section", "code section"),
-    sourceURL: findHeader("source_document_url", "source_pdf_url"),
-    notes: findHeader("notes", "remarks", "comments"),
-  };
+function get(row, colName) {
+  return row[colName] || "";
 }
 
-// Convenience accessor
-function getField(row, key) {
-  if (!key) return "";
-  return row[key] || "";
+function uniqueValues(colName) {
+  const set = new Set();
+  rawData.forEach((row) => {
+    const v = (row[colName] || "").trim();
+    if (v) set.add(v);
+  });
+  return Array.from(set).sort();
 }
 
-// ==========================================
-// DATA LOADING
-// ==========================================
+function safeValue(id) {
+  const el = document.getElementById(id);
+  return el ? el.value : "";
+}
+
+// ==========================
+// LOAD DATA
+// ==========================
 
 function loadData() {
   fetch(CSV_URL)
@@ -139,12 +135,11 @@ function loadData() {
       return res.text();
     })
     .then((text) => {
-      const { headers, rows } = parseCSVWithHeaders(text);
+      const { headers, rows } = parseCSV(text);
       if (!headers.length) throw new Error("No headers in CSV");
 
       rawData = rows;
       filteredData = rows.slice();
-      headerMap = inferHeaderMap(headers);
 
       initFilters();
       applyFilters();
@@ -154,26 +149,19 @@ function loadData() {
       const summary = document.getElementById("summary");
       if (summary) {
         summary.textContent =
-          "Error loading data. Check the CSV URL in app.js and that the sheet is published as CSV.";
+          "Error loading data. Check that data.csv exists and is valid CSV.";
       }
     });
 }
 
-// ==========================================
-// FILTER INITIALIZATION
-// ==========================================
+// ==========================
+// FILTER UI
+// ==========================
 
-function uniqueValues(data, headerKey) {
-  if (!headerKey) return [];
-  const set = new Set();
-  data.forEach((row) => {
-    const val = (row[headerKey] || "").trim();
-    if (val) set.add(val);
-  });
-  return Array.from(set).sort();
-}
+function populateSelect(selectId, values, placeholder) {
+  const select = document.getElementById(selectId);
+  if (!select) return;
 
-function populateSelect(select, values, placeholder) {
   select.innerHTML = "";
   const optAll = document.createElement("option");
   optAll.value = "";
@@ -186,125 +174,71 @@ function populateSelect(select, values, placeholder) {
     opt.textContent = value;
     select.appendChild(opt);
   });
+
+  select.addEventListener("change", applyFilters);
 }
 
 function initFilters() {
-  const citySelect = document.getElementById("cityFilter");
-  const zoneSelect = document.getElementById("zoneFilter");
-  const zoneTypeSelect = document.getElementById("zoneTypeFilter");
-
-  if (citySelect && headerMap.city) {
-    populateSelect(
-      citySelect,
-      uniqueValues(rawData, headerMap.city),
-      "All cities"
-    );
-    citySelect.addEventListener("change", applyFilters);
-  }
-
-  if (zoneSelect && headerMap.zone) {
-    populateSelect(
-      zoneSelect,
-      uniqueValues(rawData, headerMap.zone),
-      "All zones"
-    );
-    zoneSelect.addEventListener("change", applyFilters);
-  }
-
-  if (zoneTypeSelect && headerMap.zoneType) {
-    populateSelect(
-      zoneTypeSelect,
-      uniqueValues(rawData, headerMap.zoneType),
-      "All types"
-    );
-    zoneTypeSelect.addEventListener("change", applyFilters);
-  }
-
-  const aduSelect = document.getElementById("aduAllowedFilter");
-  if (aduSelect) aduSelect.addEventListener("change", applyFilters);
-
-  const daduSelect = document.getElementById("daduAllowedFilter");
-  if (daduSelect) daduSelect.addEventListener("change", applyFilters);
-
-  const ownerOccSelect = document.getElementById("ownerOccFilter");
-  if (ownerOccSelect) ownerOccSelect.addEventListener("change", applyFilters);
+  populateSelect("cityFilter", uniqueValues(COL.city), "All cities");
+  populateSelect("zoneFilter", uniqueValues(COL.zone), "All zones");
+  populateSelect("zoneTypeFilter", uniqueValues(COL.zoneType), "All types");
 
   const search = document.getElementById("searchInput");
   if (search) search.addEventListener("input", debounce(applyFilters, 150));
+
+  const aduSel = document.getElementById("aduAllowedFilter");
+  if (aduSel) aduSel.addEventListener("change", applyFilters);
+
+  const daduSel = document.getElementById("daduAllowedFilter");
+  if (daduSel) daduSel.addEventListener("change", applyFilters);
+
+  const ownerOccSel = document.getElementById("ownerOccFilter");
+  if (ownerOccSel) ownerOccSel.addEventListener("change", applyFilters);
 
   const clearBtn = document.getElementById("clearFilters");
   if (clearBtn) clearBtn.addEventListener("click", clearFilters);
 }
 
-// ==========================================
-// FILTERING & SEARCH
-// ==========================================
+// ==========================
+// FILTER LOGIC
+// ==========================
 
 function applyFilters() {
-  const cityVal = safeSelectValue("cityFilter");
-  const zoneVal = safeSelectValue("zoneFilter");
-  const zoneTypeVal = safeSelectValue("zoneTypeFilter");
-  const aduVal = safeSelectValue("aduAllowedFilter");
-  const daduVal = safeSelectValue("daduAllowedFilter");
-  const ownerOccVal = safeSelectValue("ownerOccFilter");
+  const cityVal = safeValue("cityFilter");
+  const zoneVal = safeValue("zoneFilter");
+  const zoneTypeVal = safeValue("zoneTypeFilter");
+  const aduVal = safeValue("aduAllowedFilter");
+  const daduVal = safeValue("daduAllowedFilter");
+  const ownerOccVal = safeValue("ownerOccFilter");
   const searchVal = (document.getElementById("searchInput")?.value || "")
     .toLowerCase()
     .trim();
 
   filteredData = rawData.filter((row) => {
-    if (cityVal && headerMap.city && row[headerMap.city] !== cityVal) {
-      return false;
-    }
-    if (zoneVal && headerMap.zone && row[headerMap.zone] !== zoneVal) {
-      return false;
-    }
-    if (
-      zoneTypeVal &&
-      headerMap.zoneType &&
-      row[headerMap.zoneType] !== zoneTypeVal
-    ) {
-      return false;
-    }
-    if (
-      aduVal &&
-      headerMap.aduAllowed &&
-      row[headerMap.aduAllowed] !== aduVal
-    ) {
-      return false;
-    }
-    if (
-      daduVal &&
-      headerMap.daduAllowed &&
-      row[headerMap.daduAllowed] !== daduVal
-    ) {
-      return false;
-    }
-    if (
-      ownerOccVal &&
-      headerMap.ownerOcc &&
-      row[headerMap.ownerOcc] !== ownerOccVal
-    ) {
-      return false;
-    }
+    if (cityVal && get(row, COL.city) !== cityVal) return false;
+    if (zoneVal && get(row, COL.zone) !== zoneVal) return false;
+    if (zoneTypeVal && get(row, COL.zoneType) !== zoneTypeVal) return false;
+    if (aduVal && get(row, COL.aduAllowed) !== aduVal) return false;
+    if (daduVal && get(row, COL.daduAllowed) !== daduVal) return false;
+    if (ownerOccVal && get(row, COL.ownerOcc) !== ownerOccVal) return false;
 
     if (searchVal) {
-      const parts = [];
+      const haystack = (
+        get(row, COL.city) +
+        " " +
+        get(row, COL.zone) +
+        " " +
+        get(row, COL.zoneType) +
+        " " +
+        get(row, COL.notes) +
+        " " +
+        get(row, COL.codeSection) +
+        " " +
+        get(row, COL.parkingNotes || "Parking_Notes")
+      )
+        .toLowerCase()
+        .trim();
 
-      [
-        headerMap.city,
-        headerMap.zone,
-        headerMap.zoneType,
-        headerMap.aduAllowed,
-        headerMap.daduAllowed,
-        headerMap.minLotSize,
-        headerMap.minParking,
-        headerMap.codeSection,
-        headerMap.notes,
-      ].forEach((key) => {
-        if (key) parts.push(row[key] || "");
-      });
-
-      const haystack = parts.join(" ").toLowerCase();
       if (!haystack.includes(searchVal)) return false;
     }
 
@@ -327,106 +261,69 @@ function clearFilters() {
   render();
 }
 
-function safeSelectValue(id) {
-  const el = document.getElementById(id);
-  return el ? el.value : "";
-}
-
-// ==========================================
-// RENDERING
-// ==========================================
+// ==========================
+// RENDER TABLE
+// ==========================
 
 function render() {
   const tbody = document.getElementById("resultsBody");
   const summary = document.getElementById("summary");
-  const chipsContainer = document.getElementById("activeFilters");
-
   if (!tbody) return;
 
   tbody.innerHTML = "";
-  if (chipsContainer) chipsContainer.innerHTML = "";
 
   if (summary) {
     summary.textContent = `${filteredData.length} of ${rawData.length} rows shown`;
   }
 
-  const filters = [];
-  const cityVal = safeSelectValue("cityFilter");
-  const zoneVal = safeSelectValue("zoneFilter");
-  const zoneTypeVal = safeSelectValue("zoneTypeFilter");
-  const aduVal = safeSelectValue("aduAllowedFilter");
-  const daduVal = safeSelectValue("daduAllowedFilter");
-  const ownerOccVal = safeSelectValue("ownerOccFilter");
-  const searchVal = (document.getElementById("searchInput")?.value || "").trim();
-
-  if (cityVal) filters.push(`City: ${cityVal}`);
-  if (zoneVal) filters.push(`Zone: ${zoneVal}`);
-  if (zoneTypeVal) filters.push(`Type: ${zoneTypeVal}`);
-  if (aduVal) filters.push(`ADU: ${aduVal}`);
-  if (daduVal) filters.push(`DADU: ${daduVal}`);
-  if (ownerOccVal) filters.push(`Owner occ.: ${ownerOccVal}`);
-  if (searchVal) filters.push(`Search: “${searchVal}”`);
-
-  if (chipsContainer) {
-    filters.forEach((text) => {
-      const chip = document.createElement("div");
-      chip.className = "chip";
-      chip.textContent = text;
-      chipsContainer.appendChild(chip);
-    });
-  }
-
-  // Build table rows
   filteredData.forEach((row) => {
     const tr = document.createElement("tr");
 
-    const city = getField(row, headerMap.city);
-    const zone = getField(row, headerMap.zone);
-    const zoneType = getField(row, headerMap.zoneType);
-    const adu = getField(row, headerMap.aduAllowed);
-    const dadu = getField(row, headerMap.daduAllowed);
-    const maxADUSize = getField(row, headerMap.maxADUSize);
-    const maxADUs = getField(row, headerMap.maxADUs);
-    const minLot = getField(row, headerMap.minLotSize);
-    const minParking = getField(row, headerMap.minParking);
-    const ownerOcc = getField(row, headerMap.ownerOcc);
-    const heightPrimary = getField(row, headerMap.heightPrimary);
-    const heightDADU = getField(row, headerMap.heightDADU);
-    const frontSetback = getField(row, headerMap.frontSetback);
-    const sideSetback = getField(row, headerMap.sideSetback);
-    const rearSetback = getField(row, headerMap.rearSetback);
-    const codeSection = getField(row, headerMap.codeSection);
-    const sourceURL = getField(row, headerMap.sourceURL);
-    const notes = getField(row, headerMap.notes);
+    const city = get(row, COL.city) || "—";
+    const zone = get(row, COL.zone) || "—";
+    const zoneType = get(row, COL.zoneType) || "—";
+    const adu = get(row, COL.aduAllowed) || "—";
+    const dadu = get(row, COL.daduAllowed) || "—";
+    const maxADUSize = get(row, COL.maxADUSize) || "—";
+    const maxDADUSize = get(row, COL.maxDADUSize) || "—";
+    const maxADUs = get(row, COL.maxADUs) || "—";
+    const minLot = get(row, COL.minLotSize) || "—";
+    const minParking = get(row, COL.minParking) || "—";
+    const ownerOcc = get(row, COL.ownerOcc) || "—";
+    const heightPrimary = get(row, COL.heightPrimary) || "—";
+    const heightDADU = get(row, COL.heightDADU) || "—";
+    const frontSetback = get(row, COL.frontSetback) || "—";
+    const sideSetback = get(row, COL.sideSetback) || "—";
+    const rearSetback = get(row, COL.rearSetback) || "—";
+    const codeSection = get(row, COL.codeSection);
+    const sourceURL = get(row, COL.sourceURL);
+    const notes = get(row, COL.notes) || "—";
 
     const setbacksCombined =
-      [frontSetback, sideSetback, rearSetback]
-        .map((v) => (v ? v : "—"))
-        .join(" / ") || "—";
+      `${frontSetback} / ${sideSetback} / ${rearSetback}`;
 
     const cells = [
-      city || "—",
-      zone || "—",
-      zoneType || "—",
-      adu || "—",
-      dadu || "—",
-      maxADUSize || "—",
-      maxADUs || "—",
-      minLot || "—",
-      minParking || "—",
-      ownerOcc || "—",
-      heightPrimary || "—",
-      heightDADU || "—",
+      city,
+      zone,
+      zoneType,
+      adu,
+      dadu,
+      maxADUSize,
+      maxDADUSize,
+      maxADUs,
+      minLot,
+      minParking,
+      ownerOcc,
+      heightPrimary,
+      heightDADU,
       setbacksCombined,
       codeSection || "—",
-      notes || "—",
+      notes,
     ];
 
-    cells.forEach((value, idx) => {
+    cells.forEach((val, idx) => {
       const td = document.createElement("td");
-
-      // Make code section a link if we have a URL
-      if (idx === 13 && codeSection && sourceURL) {
+      if (idx === 14 && codeSection && sourceURL) {
         const a = document.createElement("a");
         a.href = sourceURL;
         a.target = "_blank";
@@ -434,9 +331,8 @@ function render() {
         a.textContent = codeSection;
         td.appendChild(a);
       } else {
-        td.textContent = value;
+        td.textContent = val;
       }
-
       tr.appendChild(td);
     });
 
@@ -444,9 +340,9 @@ function render() {
   });
 }
 
-// ==========================================
-// UTIL: debounce
-// ==========================================
+// ==========================
+// UTIL
+// ==========================
 
 function debounce(fn, delay) {
   let timeout;
@@ -456,9 +352,8 @@ function debounce(fn, delay) {
   };
 }
 
-// ==========================================
+// ==========================
 // BOOTSTRAP
-// ==========================================
+// ==========================
 
 document.addEventListener("DOMContentLoaded", loadData);
-
