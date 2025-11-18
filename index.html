@@ -33,6 +33,21 @@
   <input type="text" id="searchInput" placeholder="Search notes, setbacks, etc." />
 
   <button id="clearFilters">Clear filters</button>
+  <button id="openCompare">Compare cities</button>
+
+<div id="compareModal" class="modal">
+  <div class="modal-content">
+    <span id="closeCompare" class="close">&times;</span>
+    <h2>City Comparison</h2>
+    <p>Select cities to compare:</p>
+
+    <select id="compareCitySelect" multiple size="6"></select>
+    <button id="runCompare">Compare Selected</button>
+
+    <div id="compareResults"></div>
+  </div>
+</div>
+
 
   <p id="summary"></p>
 
