@@ -1,343 +1,223 @@
-// ==========================
+// =============================================
 // CONFIG
-// ==========================
-
-// We're loading CSV that lives in the repo root:
-// you uploaded data.csv already.
+// =============================================
 const CSV_URL = "data.csv";
 
-// Column names in your sheet (must match exactly)
-const COL = {
-  city: "City",
-  zone: "Zone",
-  zoneType: "Zone_Type",
-  aduAllowed: "ADU_Allowed",
-  daduAllowed: "DADU_Allowed",
-  maxADUs: "Max_ADUs_Per_Lot",
-  maxADUSize: "Max_ADU_Size_Sqft",
-  maxDADUSize: "Max_DADU_Size_Sqft",
-  minLotSize: "Min_Lot_Size_Sqft",
-  maxLotCoverage: "Max_Lot_Coverage_Percent",
-  maxImpervious: "Max_Impervious_Surface_Percent",
-  minParking: "Min_Parking_Spaces",
-  ownerOcc: "Owner_Occupancy_Required",
-  heightPrimary: "Max_Building_Height_Primary_ft",
-  heightDADU: "DADU_Max_Height_ft",
-  frontSetback: "Min_Front_Setback_ft",
-  sideSetback: "Min_Side_Setback_ft",
-  rearSetback: "Min_Rear_Setback_ft",
-  codeSection: "Reference_Code_Section",
-  sourceURL: "Source_Document_URL",
-  notes: "Notes",
-};
-
-// ==========================
-// CSV PARSER
-// ==========================
-
+// =============================================
+// CSV PARSER (robust for commas + quotes)
+// =============================================
 function parseCSV(text) {
-  // Strip BOM if present so first header isn't "﻿City"
-  if (text.charCodeAt(0) === 0xfeff) {
-    text = text.slice(1);
-  }
-
   const rows = [];
   let current = [];
   let value = "";
-  let insideQuotes = false;
-
-  const pushValue = () => {
-    current.push(value);
-    value = "";
-  };
+  let inside = false;
 
   for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    const next = text[i + 1];
+    let c = text[i];
+    let next = text[i + 1];
 
-    if (char === '"' && !insideQuotes) {
-      insideQuotes = true;
-    } else if (char === '"' && insideQuotes) {
+    if (c === '"' && !inside) {
+      inside = true;
+    } else if (c === '"' && inside) {
       if (next === '"') {
         value += '"';
         i++;
       } else {
-        insideQuotes = false;
+        inside = false;
       }
-    } else if (char === "," && !insideQuotes) {
-      pushValue();
-    } else if ((char === "\n" || char === "\r") && !insideQuotes) {
+    } else if (c === "," && !inside) {
+      current.push(value);
+      value = "";
+    } else if ((c === "\n" || c === "\r") && !inside) {
       if (value.length > 0 || current.length > 0) {
-        pushValue();
+        current.push(value);
         rows.push(current);
         current = [];
+        value = "";
       }
-      if (char === "\r" && next === "\n") i++;
+      if (c === "\r" && next === "\n") i++;
     } else {
-      value += char;
+      value += c;
     }
   }
 
   if (value.length > 0 || current.length > 0) {
-    pushValue();
+    current.push(value);
     rows.push(current);
   }
 
-  if (!rows.length) return { headers: [], rows: [] };
+  return rows;
+}
 
-  const headers = rows[0].map((h) => h.trim());
-  const dataRows = rows.slice(1).map((cells) => {
-    const obj = {};
-    headers.forEach((h, i) => {
-      obj[h] = (cells[i] || "").trim();
-    });
-    return obj;
+// =============================================
+// GLOBAL DATA
+// =============================================
+let headers = [];
+let rows = [];
+let filtered = [];
+
+// =============================================
+// LOAD CSV
+// =============================================
+async function loadCSV() {
+  const res = await fetch(CSV_URL);
+  const text = await res.text();
+
+  const parsed = parseCSV(text);
+
+  headers = parsed[0];            // header row
+  rows = parsed.slice(1);         // data rows
+  filtered = [...rows];           // default view
+
+  buildTableHeader();
+  buildFilters();
+  applyFilters();
+}
+
+// =============================================
+// BUILD TABLE HEADER AUTOMATICALLY
+// =============================================
+function buildTableHeader() {
+  const thead = document.getElementById("tableHead");
+  thead.innerHTML = "";
+
+  const tr = document.createElement("tr");
+
+  headers.forEach(h => {
+    const th = document.createElement("th");
+    th.textContent = h || "—";
+    tr.appendChild(th);
   });
 
-  return { headers, rows: dataRows };
+  thead.appendChild(tr);
 }
 
-// ==========================
-// STATE
-// ==========================
-
-let rawData = [];
-let filteredData = [];
-
-// ==========================
-// HELPERS
-// ==========================
-
-function get(row, colName) {
-  return row[colName] || "";
-}
-
-function uniqueValues(colName) {
+// =============================================
+// FILTER SYSTEM
+// =============================================
+function uniqueValues(colIndex) {
   const set = new Set();
-  rawData.forEach((row) => {
-    const v = (row[colName] || "").trim();
-    if (v) set.add(v);
+  rows.forEach(r => {
+    const v = r[colIndex] || "";
+    if (v.trim() !== "") set.add(v.trim());
   });
   return Array.from(set).sort();
 }
 
-function safeValue(id) {
+function fillSelect(id, values, placeholder) {
   const el = document.getElementById(id);
-  return el ? el.value : "";
-}
+  el.innerHTML = "";
+  const any = document.createElement("option");
+  any.value = "";
+  any.textContent = placeholder;
+  el.appendChild(any);
 
-// ==========================
-// LOAD DATA
-// ==========================
-
-function loadData() {
-  fetch(CSV_URL)
-    .then((res) => {
-      if (!res.ok) throw new Error("Failed to load data");
-      return res.text();
-    })
-    .then((text) => {
-      const { headers, rows } = parseCSV(text);
-      if (!headers.length) throw new Error("No headers in CSV");
-
-      rawData = rows;
-      filteredData = rows.slice();
-
-      initFilters();
-      applyFilters();
-    })
-    .catch((err) => {
-      console.error(err);
-      const summary = document.getElementById("summary");
-      if (summary) {
-        summary.textContent =
-          "Error loading data. Check that data.csv exists and is valid CSV.";
-      }
-    });
-}
-
-// ==========================
-// FILTER UI
-// ==========================
-
-function populateSelect(selectId, values, placeholder) {
-  const select = document.getElementById(selectId);
-  if (!select) return;
-
-  select.innerHTML = "";
-  const optAll = document.createElement("option");
-  optAll.value = "";
-  optAll.textContent = placeholder;
-  select.appendChild(optAll);
-
-  values.forEach((value) => {
+  values.forEach(v => {
     const opt = document.createElement("option");
-    opt.value = value;
-    opt.textContent = value;
-    select.appendChild(opt);
+    opt.value = v;
+    opt.textContent = v;
+    el.appendChild(opt);
   });
 
-  select.addEventListener("change", applyFilters);
+  el.addEventListener("change", applyFilters);
 }
 
-function initFilters() {
-  populateSelect("cityFilter", uniqueValues(COL.city), "All cities");
-  populateSelect("zoneFilter", uniqueValues(COL.zone), "All zones");
-  populateSelect("zoneTypeFilter", uniqueValues(COL.zoneType), "All types");
+function buildFilters() {
+  const cityIndex = headers.indexOf("City");
+  const zoneIndex = headers.indexOf("Zone");
+  const zoneTypeIndex = headers.indexOf("Zone_Type");
+  const aduIndex = headers.indexOf("ADU_Allowed");
+  const daduIndex = headers.indexOf("DADU_Allowed");
+  const ownerIndex = headers.indexOf("Owner_Occupancy_Required");
 
-  const search = document.getElementById("searchInput");
-  if (search) search.addEventListener("input", debounce(applyFilters, 150));
+  fillSelect("cityFilter", uniqueValues(cityIndex), "All cities");
+  fillSelect("zoneFilter", uniqueValues(zoneIndex), "All zones");
+  fillSelect("zoneTypeFilter", uniqueValues(zoneTypeIndex), "All types");
+  fillSelect("aduFilter", uniqueValues(aduIndex), "Any");
+  fillSelect("daduFilter", uniqueValues(daduIndex), "Any");
+  fillSelect("ownerOccFilter", uniqueValues(ownerIndex), "Any");
 
-  const aduSel = document.getElementById("aduAllowedFilter");
-  if (aduSel) aduSel.addEventListener("change", applyFilters);
+  document.getElementById("searchInput")
+    .addEventListener("input", applyFilters);
 
-  const daduSel = document.getElementById("daduAllowedFilter");
-  if (daduSel) daduSel.addEventListener("change", applyFilters);
-
-  const ownerOccSel = document.getElementById("ownerOccFilter");
-  if (ownerOccSel) ownerOccSel.addEventListener("change", applyFilters);
-
-  const clearBtn = document.getElementById("clearFilters");
-  if (clearBtn) clearBtn.addEventListener("click", clearFilters);
+  document.getElementById("clearFilters")
+    .addEventListener("click", clearFilters);
 }
 
-// ==========================
-// FILTER LOGIC
-// ==========================
+function clearFilters() {
+  ["cityFilter","zoneFilter","zoneTypeFilter","aduFilter","daduFilter","ownerOccFilter"]
+    .forEach(id => document.getElementById(id).value = "");
 
+  document.getElementById("searchInput").value = "";
+  filtered = [...rows];
+  renderTable();
+}
+
+// =============================================
+// APPLY FILTERS
+// =============================================
 function applyFilters() {
-  const cityVal = safeValue("cityFilter");
-  const zoneVal = safeValue("zoneFilter");
-  const zoneTypeVal = safeValue("zoneTypeFilter");
-  const aduVal = safeValue("aduAllowedFilter");
-  const daduVal = safeValue("daduAllowedFilter");
-  const ownerOccVal = safeValue("ownerOccFilter");
-  const searchVal = (document.getElementById("searchInput")?.value || "")
-    .toLowerCase()
-    .trim();
+  const cityVal  = document.getElementById("cityFilter").value;
+  const zoneVal  = document.getElementById("zoneFilter").value;
+  const typeVal  = document.getElementById("zoneTypeFilter").value;
+  const aduVal   = document.getElementById("aduFilter").value;
+  const daduVal  = document.getElementById("daduFilter").value;
+  const ownerVal = document.getElementById("ownerOccFilter").value;
+  const searchVal = document.getElementById("searchInput").value.toLowerCase();
 
-  filteredData = rawData.filter((row) => {
-    if (cityVal && get(row, COL.city) !== cityVal) return false;
-    if (zoneVal && get(row, COL.zone) !== zoneVal) return false;
-    if (zoneTypeVal && get(row, COL.zoneType) !== zoneTypeVal) return false;
-    if (aduVal && get(row, COL.aduAllowed) !== aduVal) return false;
-    if (daduVal && get(row, COL.daduAllowed) !== daduVal) return false;
-    if (ownerOccVal && get(row, COL.ownerOcc) !== ownerOccVal) return false;
+  const cityIdx = headers.indexOf("City");
+  const zoneIdx = headers.indexOf("Zone");
+  const typeIdx = headers.indexOf("Zone_Type");
+  const aduIdx = headers.indexOf("ADU_Allowed");
+  const daduIdx = headers.indexOf("DADU_Allowed");
+  const ownerIdx = headers.indexOf("Owner_Occupancy_Required");
+
+  filtered = rows.filter(r => {
+    if (cityVal && r[cityIdx] !== cityVal) return false;
+    if (zoneVal && r[zoneIdx] !== zoneVal) return false;
+    if (typeVal && r[typeIdx] !== typeVal) return false;
+    if (aduVal && r[aduIdx] !== aduVal) return false;
+    if (daduVal && r[daduIdx] !== daduVal) return false;
+    if (ownerVal && r[ownerIdx] !== ownerVal) return false;
 
     if (searchVal) {
-      const haystack = (
-        get(row, COL.city) +
-        " " +
-        get(row, COL.zone) +
-        " " +
-        get(row, COL.zoneType) +
-        " " +
-        get(row, COL.notes) +
-        " " +
-        get(row, COL.codeSection) +
-        " " +
-        get(row, COL.parkingNotes || "Parking_Notes")
-      )
-        .toLowerCase()
-        .trim();
-
-      if (!haystack.includes(searchVal)) return false;
+      const combined = r.join(" ").toLowerCase();
+      if (!combined.includes(searchVal)) return false;
     }
 
     return true;
   });
 
-  render();
+  renderTable();
 }
 
-function clearFilters() {
-  ["cityFilter", "zoneFilter", "zoneTypeFilter", "aduAllowedFilter", "daduAllowedFilter", "ownerOccFilter"].forEach(
-    (id) => {
-      const el = document.getElementById(id);
-      if (el) el.value = "";
-    }
-  );
-  const search = document.getElementById("searchInput");
-  if (search) search.value = "";
-  filteredData = rawData.slice();
-  render();
-}
-
-// ==========================
-// RENDER TABLE
-// ==========================
-
-function render() {
-  const tbody = document.getElementById("resultsBody");
+// =============================================
+// RENDER TABLE (ALL COLUMNS, ALWAYS ALIGNED)
+// =============================================
+function renderTable() {
+  const tbody = document.getElementById("tableBody");
   const summary = document.getElementById("summary");
-  if (!tbody) return;
 
   tbody.innerHTML = "";
 
-  if (summary) {
-    summary.textContent = `${filteredData.length} of ${rawData.length} rows shown`;
-  }
+  summary.textContent =
+    `${filtered.length} of ${rows.length} rows shown`;
 
-  filteredData.forEach((row) => {
+  filtered.forEach(r => {
     const tr = document.createElement("tr");
 
-    const city = get(row, COL.city) || "—";
-    const zone = get(row, COL.zone) || "—";
-    const zoneType = get(row, COL.zoneType) || "—";
-    const adu = get(row, COL.aduAllowed) || "—";
-    const dadu = get(row, COL.daduAllowed) || "—";
-    const maxADUSize = get(row, COL.maxADUSize) || "—";
-    const maxDADUSize = get(row, COL.maxDADUSize) || "—";
-    const maxADUs = get(row, COL.maxADUs) || "—";
-    const minLot = get(row, COL.minLotSize) || "—";
-    const maxLotCoverage = get(row, COL.maxLotCoverage) || "—";
-const maxImpervious = get(row, COL.maxImpervious) || "—";
-    const minParking = get(row, COL.minParking) || "—";
-    const ownerOcc = get(row, COL.ownerOcc) || "—";
-    const heightPrimary = get(row, COL.heightPrimary) || "—";
-    const heightDADU = get(row, COL.heightDADU) || "—";
-    const frontSetback = get(row, COL.frontSetback) || "—";
-    const sideSetback = get(row, COL.sideSetback) || "—";
-    const rearSetback = get(row, COL.rearSetback) || "—";
-    const codeSection = get(row, COL.codeSection);
-    const sourceURL = get(row, COL.sourceURL);
-    const notes = get(row, COL.notes) || "—";
-
-    const setbacksCombined =
-      `${frontSetback} / ${sideSetback} / ${rearSetback}`;
-
-    const cells = [
-      city,
-      zone,
-      zoneType,
-      adu,
-      dadu,
-      maxADUSize,
-      maxDADUSize,
-      maxADUs,
-      minLot,
-      maxLotCoverage,      
-      maxImpervious,
-      minParking,
-      ownerOcc,
-      heightPrimary,
-      heightDADU,
-      setbacksCombined,
-      codeSection || "—",
-      notes,
-    ];
-
-    cells.forEach((val, idx) => {
+    r.forEach((cell,i) => {
       const td = document.createElement("td");
-      if (idx === 14 && codeSection && sourceURL) {
+      // auto-link Source_Document_URL
+      if (headers[i] === "Source_Document_URL" && cell.trim() !== "") {
         const a = document.createElement("a");
-        a.href = sourceURL;
+        a.href = cell;
         a.target = "_blank";
-        a.rel = "noopener noreferrer";
-        a.textContent = codeSection;
+        a.rel = "noopener";
+        a.textContent = "Link";
         td.appendChild(a);
       } else {
-        td.textContent = val;
+        td.textContent = cell || "—";
       }
       tr.appendChild(td);
     });
@@ -346,20 +226,5 @@ const maxImpervious = get(row, COL.maxImpervious) || "—";
   });
 }
 
-// ==========================
-// UTIL
-// ==========================
+document.addEventListener("DOMContentLoaded", loadCSV);
 
-function debounce(fn, delay) {
-  let timeout;
-  return (...args) => {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => fn.apply(null, args), delay);
-  };
-}
-
-// ==========================
-// BOOTSTRAP
-// ==========================
-
-document.addEventListener("DOMContentLoaded", loadData);
