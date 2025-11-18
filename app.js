@@ -3,87 +3,91 @@
 // =============================================
 const CSV_URL = "data.csv";
 
+// CSV data
+let headers = [];
+let rows = [];
+let filteredRows = [];
+
 // =============================================
-// CSV PARSER (robust for commas + quotes)
+// CSV PARSER (handles commas + quotes)
 // =============================================
 function parseCSV(text) {
-  const rows = [];
-  let current = [];
-  let value = "";
+  // strip BOM if present
+  if (text.charCodeAt(0) === 0xfeff) {
+    text = text.slice(1);
+  }
+
+  const out = [];
+  let cur = [];
+  let val = "";
   let inside = false;
 
   for (let i = 0; i < text.length; i++) {
-    let c = text[i];
-    let next = text[i + 1];
+    const c = text[i];
+    const next = text[i + 1];
 
     if (c === '"' && !inside) {
       inside = true;
     } else if (c === '"' && inside) {
       if (next === '"') {
-        value += '"';
+        val += '"';
         i++;
       } else {
         inside = false;
       }
     } else if (c === "," && !inside) {
-      current.push(value);
-      value = "";
+      cur.push(val);
+      val = "";
     } else if ((c === "\n" || c === "\r") && !inside) {
-      if (value.length > 0 || current.length > 0) {
-        current.push(value);
-        rows.push(current);
-        current = [];
-        value = "";
+      if (val.length > 0 || cur.length > 0) {
+        cur.push(val);
+        out.push(cur);
+        cur = [];
+        val = "";
       }
       if (c === "\r" && next === "\n") i++;
     } else {
-      value += c;
+      val += c;
     }
   }
 
-  if (value.length > 0 || current.length > 0) {
-    current.push(value);
-    rows.push(current);
+  if (val.length > 0 || cur.length > 0) {
+    cur.push(val);
+    out.push(cur);
   }
 
-  return rows;
+  return out;
 }
-
-// =============================================
-// GLOBAL DATA
-// =============================================
-let headers = [];
-let rows = [];
-let filtered = [];
 
 // =============================================
 // LOAD CSV
 // =============================================
 async function loadCSV() {
   const res = await fetch(CSV_URL);
+  if (!res.ok) {
+    throw new Error("Unable to load data.csv");
+  }
   const text = await res.text();
-
   const parsed = parseCSV(text);
 
-  headers = parsed[0];            // header row
-  rows = parsed.slice(1);         // data rows
-  filtered = [...rows];           // default view
+  if (!parsed.length) {
+    throw new Error("Empty CSV");
+  }
 
-  buildTableHeader();
-  buildFilters();
-  applyFilters();
+  headers = parsed[0].map((h) => h.trim());
+  rows = parsed.slice(1);
+  filteredRows = [...rows];
 }
 
 // =============================================
-// BUILD TABLE HEADER AUTOMATICALLY
+// TABLE BUILDING
 // =============================================
 function buildTableHeader() {
   const thead = document.getElementById("tableHead");
   thead.innerHTML = "";
-
   const tr = document.createElement("tr");
 
-  headers.forEach(h => {
+  headers.forEach((h) => {
     const th = document.createElement("th");
     th.textContent = h || "—";
     tr.appendChild(th);
@@ -92,27 +96,74 @@ function buildTableHeader() {
   thead.appendChild(tr);
 }
 
+function renderTable() {
+  const tbody = document.getElementById("tableBody");
+  const summary = document.getElementById("summary");
+
+  tbody.innerHTML = "";
+
+  if (summary) {
+    summary.textContent = `${filteredRows.length} of ${rows.length} rows shown`;
+  }
+
+  const urlIdx = headers.indexOf("Source_Document_URL");
+
+  filteredRows.forEach((r) => {
+    const tr = document.createElement("tr");
+
+    r.forEach((cell, i) => {
+      const td = document.createElement("td");
+      const text = cell && cell.trim() !== "" ? cell : "—";
+
+      if (i === urlIdx && text !== "—") {
+        const a = document.createElement("a");
+        a.href = cell;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.textContent = "Code link";
+        td.appendChild(a);
+      } else {
+        td.textContent = text;
+      }
+
+      tr.appendChild(td);
+    });
+
+    tbody.appendChild(tr);
+  });
+}
+
 // =============================================
-// FILTER SYSTEM
+// FILTERS
 // =============================================
-function uniqueValues(colIndex) {
+function colIndex(name) {
+  return headers.indexOf(name);
+}
+
+function uniqueValuesByHeader(name) {
+  const idx = colIndex(name);
+  if (idx === -1) return [];
   const set = new Set();
-  rows.forEach(r => {
-    const v = r[colIndex] || "";
-    if (v.trim() !== "") set.add(v.trim());
+  rows.forEach((r) => {
+    const v = (r[idx] || "").trim();
+    if (v) set.add(v);
   });
   return Array.from(set).sort();
 }
 
-function fillSelect(id, values, placeholder) {
+function fillSelectByHeader(id, headerName, placeholder) {
   const el = document.getElementById(id);
+  if (!el) return;
+
+  const values = uniqueValuesByHeader(headerName);
   el.innerHTML = "";
+
   const any = document.createElement("option");
   any.value = "";
   any.textContent = placeholder;
   el.appendChild(any);
 
-  values.forEach(v => {
+  values.forEach((v) => {
     const opt = document.createElement("option");
     opt.value = v;
     opt.textContent = v;
@@ -123,56 +174,69 @@ function fillSelect(id, values, placeholder) {
 }
 
 function buildFilters() {
-  const cityIndex = headers.indexOf("City");
-  const zoneIndex = headers.indexOf("Zone");
-  const zoneTypeIndex = headers.indexOf("Zone_Type");
-  const aduIndex = headers.indexOf("ADU_Allowed");
-  const daduIndex = headers.indexOf("DADU_Allowed");
-  const ownerIndex = headers.indexOf("Owner_Occupancy_Required");
+  fillSelectByHeader("cityFilter", "City", "All cities");
+  fillSelectByHeader("zoneFilter", "Zone", "All zones");
+  fillSelectByHeader("zoneTypeFilter", "Zone_Type", "All types");
+  fillSelectByHeader("aduFilter", "ADU_Allowed", "Any");
+  fillSelectByHeader("daduFilter", "DADU_Allowed", "Any");
+  fillSelectByHeader(
+    "ownerOccFilter",
+    "Owner_Occupancy_Required",
+    "Any"
+  );
 
-  fillSelect("cityFilter", uniqueValues(cityIndex), "All cities");
-  fillSelect("zoneFilter", uniqueValues(zoneIndex), "All zones");
-  fillSelect("zoneTypeFilter", uniqueValues(zoneTypeIndex), "All types");
-  fillSelect("aduFilter", uniqueValues(aduIndex), "Any");
-  fillSelect("daduFilter", uniqueValues(daduIndex), "Any");
-  fillSelect("ownerOccFilter", uniqueValues(ownerIndex), "Any");
+  const searchInput = document.getElementById("searchInput");
+  if (searchInput) {
+    searchInput.addEventListener("input", applyFilters);
+  }
 
-  document.getElementById("searchInput")
-    .addEventListener("input", applyFilters);
-
-  document.getElementById("clearFilters")
-    .addEventListener("click", clearFilters);
+  const clearBtn = document.getElementById("clearFilters");
+  if (clearBtn) {
+    clearBtn.addEventListener("click", clearFilters);
+  }
 }
 
 function clearFilters() {
-  ["cityFilter","zoneFilter","zoneTypeFilter","aduFilter","daduFilter","ownerOccFilter"]
-    .forEach(id => document.getElementById(id).value = "");
+  [
+    "cityFilter",
+    "zoneFilter",
+    "zoneTypeFilter",
+    "aduFilter",
+    "daduFilter",
+    "ownerOccFilter",
+  ].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
 
-  document.getElementById("searchInput").value = "";
-  filtered = [...rows];
+  const s = document.getElementById("searchInput");
+  if (s) s.value = "";
+
+  filteredRows = [...rows];
   renderTable();
 }
 
-// =============================================
-// APPLY FILTERS
-// =============================================
 function applyFilters() {
-  const cityVal  = document.getElementById("cityFilter").value;
-  const zoneVal  = document.getElementById("zoneFilter").value;
-  const typeVal  = document.getElementById("zoneTypeFilter").value;
-  const aduVal   = document.getElementById("aduFilter").value;
-  const daduVal  = document.getElementById("daduFilter").value;
+  const cityVal = document.getElementById("cityFilter").value;
+  const zoneVal = document.getElementById("zoneFilter").value;
+  const typeVal = document.getElementById("zoneTypeFilter").value;
+  const aduVal = document.getElementById("aduFilter").value;
+  const daduVal = document.getElementById("daduFilter").value;
   const ownerVal = document.getElementById("ownerOccFilter").value;
-  const searchVal = document.getElementById("searchInput").value.toLowerCase();
+  const searchVal = (
+    document.getElementById("searchInput").value || ""
+  )
+    .toLowerCase()
+    .trim();
 
-  const cityIdx = headers.indexOf("City");
-  const zoneIdx = headers.indexOf("Zone");
-  const typeIdx = headers.indexOf("Zone_Type");
-  const aduIdx = headers.indexOf("ADU_Allowed");
-  const daduIdx = headers.indexOf("DADU_Allowed");
-  const ownerIdx = headers.indexOf("Owner_Occupancy_Required");
+  const cityIdx = colIndex("City");
+  const zoneIdx = colIndex("Zone");
+  const typeIdx = colIndex("Zone_Type");
+  const aduIdx = colIndex("ADU_Allowed");
+  const daduIdx = colIndex("DADU_Allowed");
+  const ownerIdx = colIndex("Owner_Occupancy_Required");
 
-  filtered = rows.filter(r => {
+  filteredRows = rows.filter((r) => {
     if (cityVal && r[cityIdx] !== cityVal) return false;
     if (zoneVal && r[zoneIdx] !== zoneVal) return false;
     if (typeVal && r[typeIdx] !== typeVal) return false;
@@ -192,148 +256,174 @@ function applyFilters() {
 }
 
 // =============================================
-// RENDER TABLE (ALL COLUMNS, ALWAYS ALIGNED)
-// =============================================
-function renderTable() {
-  const tbody = document.getElementById("tableBody");
-  const summary = document.getElementById("summary");
-
-  tbody.innerHTML = "";
-
-  summary.textContent =
-    `${filtered.length} of ${rows.length} rows shown`;
-
-  filtered.forEach(r => {
-    const tr = document.createElement("tr");
-
-    r.forEach((cell,i) => {
-      const td = document.createElement("td");
-      // auto-link Source_Document_URL
-      if (headers[i] === "Source_Document_URL" && cell.trim() !== "") {
-        const a = document.createElement("a");
-        a.href = cell;
-        a.target = "_blank";
-        a.rel = "noopener";
-        a.textContent = "Link";
-        td.appendChild(a);
-      } else {
-        td.textContent = cell || "—";
-      }
-      tr.appendChild(td);
-    });
-
-    tbody.appendChild(tr);
-  });
-}
-// =====================================
 // MAP VISUALIZATION
-// =====================================
-
-// Approximate coordinates per city (fallbacks)
-// You can add more precise coordinates later
+// =============================================
 const cityCoords = {
   Bellevue: [47.6101, -122.2015],
-  Seattle: [47.608, -122.335],
+  Seattle: [47.6062, -122.3321],
   Redmond: [47.673, -122.121],
   Kirkland: [47.678, -122.207],
   Bothell: [47.761, -122.205],
-  Renton: [47.482, -122.216],
-  Shoreline: [47.756, -122.34],
-  Issaquah: [47.53, -122.03]
+  Renton: [47.4829, -122.2171],
+  Shoreline: [47.7557, -122.3415],
+  Issaquah: [47.5326, -122.0429],
 };
 
-// Initialize map
 function initMap() {
-  const map = L.map('map').setView([47.55, -122.15], 10);
+  const mapEl = document.getElementById("map");
+  if (!mapEl || typeof L === "undefined") return;
+
+  const map = L.map("map").setView([47.55, -122.2], 10);
 
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "© OpenStreetMap"
+    attribution: "© OpenStreetMap contributors",
   }).addTo(map);
 
-  const cityIndex = headers.indexOf("City");
-  const notesIndex = headers.indexOf("Notes");
-  const aduIndex = headers.indexOf("ADU_Allowed");
-  const zoneIndex = headers.indexOf("Zone");
+  const cityIdx = colIndex("City");
+  const zoneIdx = colIndex("Zone");
+  const aduIdx = colIndex("ADU_Allowed");
+  const notesIdx = colIndex("Notes");
 
   const seen = new Set();
 
-  rows.forEach(r => {
-    const city = r[cityIndex];
+  rows.forEach((r) => {
+    const city = (r[cityIdx] || "").trim();
     if (!city || seen.has(city)) return;
     seen.add(city);
 
     const coords = cityCoords[city] || [47.6, -122.2];
 
-    const popup = `
-      <strong>${city}</strong><br>
-      Zone Example: ${r[zoneIndex]}<br>
-      ADUs Allowed: ${r[aduIndex]}<br>
-      Notes: ${r[notesIndex] || "—"}
+    const zone = r[zoneIdx] || "—";
+    const adu = r[aduIdx] || "—";
+    const notes = r[notesIdx] || "—";
+
+    const popupHTML = `
+      <strong>${city}</strong><br/>
+      Example zone: ${zone}<br/>
+      ADUs allowed: ${adu}<br/>
+      Notes: ${notes}
     `;
 
-    L.marker(coords).addTo(map).bindPopup(popup);
+    L.marker(coords).addTo(map).bindPopup(popupHTML);
   });
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  loadCSV().then(() => initMap());
-});
+// =============================================
+// MULTI-CITY COMPARE
+// =============================================
+function initCompareUI() {
+  const openBtn = document.getElementById("openCompare");
+  const closeBtn = document.getElementById("closeCompare");
+  const modal = document.getElementById("compareModal");
+  const runBtn = document.getElementById("runCompare");
 
-// =====================================
-// MULTI-CITY COMPARE MODE
-// =====================================
+  if (!modal || !openBtn || !closeBtn || !runBtn) return;
 
-// Open modal
-document.getElementById("openCompare").onclick = () => {
-  document.getElementById("compareModal").style.display = "block";
-  populateCompareCityList();
-};
+  openBtn.addEventListener("click", () => {
+    modal.style.display = "block";
+    populateCompareCityList();
+  });
 
-// Close modal
-document.getElementById("closeCompare").onclick = () => {
-  document.getElementById("compareModal").style.display = "none";
-};
+  closeBtn.addEventListener("click", () => {
+    modal.style.display = "none";
+  });
 
-// Populate multi-select with unique cities
+  window.addEventListener("click", (e) => {
+    if (e.target === modal) {
+      modal.style.display = "none";
+    }
+  });
+
+  runBtn.addEventListener("click", runCityCompare);
+}
+
 function populateCompareCityList() {
-  const idx = headers.indexOf("City");
-  const cities = uniqueValues(idx);
+  const cityIdx = colIndex("City");
+  const cities = uniqueValuesByHeader("City");
+  const select = document.getElementById("compareCitySelect");
+  select.innerHTML = "";
 
-  const el = document.getElementById("compareCitySelect");
-  el.innerHTML = "";
-
-  cities.forEach(c => {
+  cities.forEach((c) => {
     const opt = document.createElement("option");
     opt.value = c;
     opt.textContent = c;
-    el.appendChild(opt);
+    select.appendChild(opt);
   });
 }
 
-// Run comparison
-document.getElementById("runCompare").onclick = () => {
-  const selected = Array.from(
-    document.getElementById("compareCitySelect").selectedOptions
-  ).map(opt => opt.value);
+function runCityCompare() {
+  const cityIdx = colIndex("City");
+  const select = document.getElementById("compareCitySelect");
+  const results = document.getElementById("compareResults");
+  results.innerHTML = "";
 
-  const idx = headers.indexOf("City");
-  const cards = selected.map(city => {
-    const cityRows = rows.filter(r => r[idx] === city);
-    if (cityRows.length === 0) return "";
+  const selected = Array.from(select.selectedOptions).map(
+    (o) => o.value
+  );
+
+  if (!selected.length) {
+    results.textContent = "Select at least one city to compare.";
+    return;
+  }
+
+  const cards = selected.map((city) => {
+    const cityRows = rows.filter((r) => (r[cityIdx] || "").trim() === city);
+    if (!cityRows.length) return "";
 
     const first = cityRows[0];
+    // Pick a curated subset of fields for the card:
+    const fields = [
+      "Zone",
+      "Zone_Type",
+      "ADU_Allowed",
+      "DADU_Allowed",
+      "Max_ADUs_Per_Lot",
+      "Max_ADU_Size_Sqft",
+      "Min_Lot_Size_Sqft",
+      "Min_Parking_Spaces",
+      "Owner_Occupancy_Required",
+      "Max_Building_Height_Primary_ft",
+      "DADU_Max_Height_ft",
+      "Min_Front_Setback_ft",
+      "Min_Side_Setback_ft",
+      "Min_Rear_Setback_ft",
+      "Notes",
+    ];
 
     let html = `<div class="compare-card"><h3>${city}</h3><ul>`;
-    headers.forEach((h,i) => {
-      html += `<li><strong>${h}:</strong> ${first[i] || "—"}</li>`;
+    fields.forEach((f) => {
+      const idx = colIndex(f);
+      if (idx === -1) return;
+      const label = f.replace(/_/g, " ");
+      const val = first[idx] && first[idx].trim() !== "" ? first[idx] : "—";
+      html += `<li><strong>${label}:</strong> ${val}</li>`;
     });
     html += "</ul></div>";
-
     return html;
   });
 
-  document.getElementById("compareResults").innerHTML = cards.join("");
-};
+  results.innerHTML = cards.join("");
+}
 
-document.addEventListener("DOMContentLoaded", loadCSV);
+// =============================================
+// INIT
+// =============================================
+async function initApp() {
+  try {
+    await loadCSV();
+    buildTableHeader();
+    buildFilters();
+    applyFilters();
+    initMap();
+    initCompareUI();
+  } catch (e) {
+    console.error(e);
+    const summary = document.getElementById("summary");
+    if (summary) {
+      summary.textContent =
+        "Error loading data. Check that data.csv exists and has a header row.";
+    }
+  }
+}
 
+document.addEventListener("DOMContentLoaded", initApp);
