@@ -17,6 +17,8 @@ const COL = {
   maxADUSize: "Max_ADU_Size_Sqft",
   maxDADUSize: "Max_DADU_Size_Sqft",
   minLotSize: "Min_Lot_Size_Sqft",
+  maxLotCoverage: "Max_Lot_Coverage_Percent",
+  maxImpervious: "Max_Impervious_Surface_Percent",
   minParking: "Min_Parking_Spaces",
   ownerOcc: "Owner_Occupancy_Required",
   heightPrimary: "Max_Building_Height_Primary_ft",
@@ -288,6 +290,8 @@ function render() {
     const maxDADUSize = get(row, COL.maxDADUSize) || "—";
     const maxADUs = get(row, COL.maxADUs) || "—";
     const minLot = get(row, COL.minLotSize) || "—";
+    const maxLotCoverage = get(row, COL.maxLotCoverage) || "—";
+const maxImpervious = get(row, COL.maxImpervious) || "—";
     const minParking = get(row, COL.minParking) || "—";
     const ownerOcc = get(row, COL.ownerOcc) || "—";
     const heightPrimary = get(row, COL.heightPrimary) || "—";
