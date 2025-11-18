@@ -226,6 +226,60 @@ function renderTable() {
   });
 }
 // =====================================
+// MAP VISUALIZATION
+// =====================================
+
+// Approximate coordinates per city (fallbacks)
+// You can add more precise coordinates later
+const cityCoords = {
+  Bellevue: [47.6101, -122.2015],
+  Seattle: [47.608, -122.335],
+  Redmond: [47.673, -122.121],
+  Kirkland: [47.678, -122.207],
+  Bothell: [47.761, -122.205],
+  Renton: [47.482, -122.216],
+  Shoreline: [47.756, -122.34],
+  Issaquah: [47.53, -122.03]
+};
+
+// Initialize map
+function initMap() {
+  const map = L.map('map').setView([47.55, -122.15], 10);
+
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap"
+  }).addTo(map);
+
+  const cityIndex = headers.indexOf("City");
+  const notesIndex = headers.indexOf("Notes");
+  const aduIndex = headers.indexOf("ADU_Allowed");
+  const zoneIndex = headers.indexOf("Zone");
+
+  const seen = new Set();
+
+  rows.forEach(r => {
+    const city = r[cityIndex];
+    if (!city || seen.has(city)) return;
+    seen.add(city);
+
+    const coords = cityCoords[city] || [47.6, -122.2];
+
+    const popup = `
+      <strong>${city}</strong><br>
+      Zone Example: ${r[zoneIndex]}<br>
+      ADUs Allowed: ${r[aduIndex]}<br>
+      Notes: ${r[notesIndex] || "—"}
+    `;
+
+    L.marker(coords).addTo(map).bindPopup(popup);
+  });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  loadCSV().then(() => initMap());
+});
+
+// =====================================
 // MULTI-CITY COMPARE MODE
 // =====================================
 
