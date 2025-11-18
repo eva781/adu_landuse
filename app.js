@@ -316,6 +316,8 @@ const maxImpervious = get(row, COL.maxImpervious) || "—";
       maxDADUSize,
       maxADUs,
       minLot,
+      maxLotCoverage,      
+      maxImpervious,
       minParking,
       ownerOcc,
       heightPrimary,
