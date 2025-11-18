@@ -1,139 +1,45 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
   <meta charset="UTF-8" />
-  <title>King County ADU / DADU Regulations Explorer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>King County ADU / DADU Regulations</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
+
 <body>
-  <header class="site-header">
-    <div class="header-inner">
-      <div>
-        <h1>King County ADU / DADU Regulations</h1>
-        <p class="subtitle">
-          Compare accessory dwelling rules across municipalities and zones in King County, WA.
-        </p>
-      </div>
-      <div class="badge">
-        <span>Land Use Toolkit</span>
-      </div>
-    </div>
-  </header>
+  <h1>King County ADU / DADU Regulations</h1>
+  <p>Compare accessory dwelling unit rules across municipalities and zones in King County, WA.</p>
 
-  <main class="layout">
-    <section class="controls">
-      <h2>Filters</h2>
+  <h3>Filters</h3>
+  City:
+  <select id="cityFilter"></select>
 
-      <label>
-        City
-        <select id="cityFilter">
-          <option value="">All cities</option>
-        </select>
-      </label>
+  Zone:
+  <select id="zoneFilter"></select>
 
-      <label>
-        Zone
-        <select id="zoneFilter">
-          <option value="">All zones</option>
-        </select>
-      </label>
+  Zone type:
+  <select id="zoneTypeFilter"></select>
 
-      <label>
-        Zone type
-        <select id="zoneTypeFilter">
-          <option value="">All types</option>
-        </select>
-      </label>
+  ADU allowed:
+  <select id="aduFilter"></select>
 
-      <label>
-        ADU allowed
-        <select id="aduAllowedFilter">
-          <option value="">Any</option>
-          <option value="Yes">Yes</option>
-          <option value="No">No</option>
-          <option value="Conditional">Conditional</option>
-        </select>
-      </label>
+  DADU allowed:
+  <select id="daduFilter"></select>
 
-      <label>
-        DADU allowed
-        <select id="daduAllowedFilter">
-          <option value="">Any</option>
-          <option value="Yes">Yes</option>
-          <option value="No">No</option>
-          <option value="Conditional">Conditional</option>
-        </select>
-      </label>
+  Owner occupancy:
+  <select id="ownerOccFilter"></select>
 
-      <label>
-        Owner occupancy required
-        <select id="ownerOccFilter">
-          <option value="">Any</option>
-          <option value="Yes">Yes</option>
-          <option value="No">No</option>
-          <option value="Temporary">Temporary</option>
-        </select>
-      </label>
+  Search:
+  <input type="text" id="searchInput" placeholder="Search notes, setbacks, etc." />
 
-      <label>
-        Search text
-        <input
-          id="searchInput"
-          type="text"
-          placeholder="Search notes, parking, code section..."
-        />
-      </label>
+  <button id="clearFilters">Clear filters</button>
 
-      <button id="clearFilters">Clear filters</button>
+  <p id="summary"></p>
 
-      <div class="hint">
-        Data is for reference only. Always verify against current municipal code.
-      </div>
-    </section>
-
-    <section class="results">
-      <div class="summary-bar">
-        <div id="summary" class="summary"></div>
-        <div id="activeFilters" class="chips"></div>
-      </div>
-
-      <div class="table-wrapper">
-        <table id="resultsTable">
-          <thead>
-            <tr>
-              <th>City</th>
-              <th>Zone</th>
-              <th>Zone type</th>
-              <th>ADU allowed</th>
-              <th>DADU allowed</th>
-              <th>Max ADU size (sf)</th>
-              <th>Max DADU size (sf)</th>
-              <th>Max ADUs / lot</th>
-              <th>Min lot size (sf)</th>
-              <th>Max lot coverage (%)</th>
-<th>Max impervious (%)</th>
-              <th>Min parking</th>
-              <th>Owner occ.</th>
-              <th>Height limit (ft)</th>
-              <th>Front / Side / Rear setbacks (ft)</th>
-              <th>Code section</th>
-              <th>Notes</th>
-            </tr>
-          </thead>
-          <tbody id="resultsBody">
-            <!-- rows inserted by app.js -->
-          </tbody>
-        </table>
-      </div>
-    </section>
-  </main>
-
-  <footer class="site-footer">
-    <p>
-      Built by Eva de la Peña. This tool is informational only and does not constitute legal advice.
-    </p>
-  </footer>
+  <table id="resultsTable">
+    <thead id="tableHead"></thead>
+    <tbody id="tableBody"></tbody>
+  </table>
 
   <script src="app.js"></script>
 </body>
