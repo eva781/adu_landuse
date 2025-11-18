@@ -13,6 +13,17 @@ function parseCSVWithHeaders(text) {
   let current = [];
   let value = "";
   let insideQuotes = false;
+  function parseCSVWithHeaders(text) {
+  // Strip BOM (Byte Order Mark) if present so first header isn't "﻿City"
+  if (text.charCodeAt(0) === 0xfeff) {
+    text = text.slice(1);
+  }
+
+  const rows = [];
+  let current = [];
+  let value = "";
+  let insideQuotes = false;
+
 
   const pushValue = () => {
     current.push(value);
