@@ -225,6 +225,61 @@ function renderTable() {
     tbody.appendChild(tr);
   });
 }
+// =====================================
+// MULTI-CITY COMPARE MODE
+// =====================================
+
+// Open modal
+document.getElementById("openCompare").onclick = () => {
+  document.getElementById("compareModal").style.display = "block";
+  populateCompareCityList();
+};
+
+// Close modal
+document.getElementById("closeCompare").onclick = () => {
+  document.getElementById("compareModal").style.display = "none";
+};
+
+// Populate multi-select with unique cities
+function populateCompareCityList() {
+  const idx = headers.indexOf("City");
+  const cities = uniqueValues(idx);
+
+  const el = document.getElementById("compareCitySelect");
+  el.innerHTML = "";
+
+  cities.forEach(c => {
+    const opt = document.createElement("option");
+    opt.value = c;
+    opt.textContent = c;
+    el.appendChild(opt);
+  });
+}
+
+// Run comparison
+document.getElementById("runCompare").onclick = () => {
+  const selected = Array.from(
+    document.getElementById("compareCitySelect").selectedOptions
+  ).map(opt => opt.value);
+
+  const idx = headers.indexOf("City");
+  const cards = selected.map(city => {
+    const cityRows = rows.filter(r => r[idx] === city);
+    if (cityRows.length === 0) return "";
+
+    const first = cityRows[0];
+
+    let html = `<div class="compare-card"><h3>${city}</h3><ul>`;
+    headers.forEach((h,i) => {
+      html += `<li><strong>${h}:</strong> ${first[i] || "—"}</li>`;
+    });
+    html += "</ul></div>";
+
+    return html;
+  });
+
+  document.getElementById("compareResults").innerHTML = cards.join("");
+};
 
 document.addEventListener("DOMContentLoaded", loadCSV);
 
