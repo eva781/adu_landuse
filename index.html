@@ -2,10 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>King County ADU / DADU Regulations Explorer</title>
+  <title>King County ADU / Zoning Explorer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-
-  <!-- Main styles -->
   <link rel="stylesheet" href="styles.css" />
 
   <!-- Leaflet for map -->
@@ -25,9 +23,9 @@
   <header class="site-header">
     <div class="header-inner">
       <div>
-        <h1>King County ADU / DADU Regulations</h1>
+        <h1>King County ADU & Zoning Snapshot</h1>
         <p class="subtitle">
-          Compare accessory dwelling rules across municipalities and zones in King County, WA.
+          Fast feasibility snapshots for ADUs and small infill housing across King County.
         </p>
       </div>
       <div class="header-actions">
@@ -37,61 +35,79 @@
   </header>
 
   <main class="page-main">
-    <!-- Filters + Summary -->
-    <section class="card filters-card">
-      <h2>Filters</h2>
-      <div class="filters-grid">
-        <label>
-          <span>City</span>
-          <select id="cityFilter"></select>
-        </label>
-        <label>
-          <span>Zone</span>
-          <select id="zoneFilter"></select>
-        </label>
-        <label>
-          <span>Zone type</span>
-          <select id="zoneTypeFilter"></select>
-        </label>
-        <label>
-          <span>ADU allowed</span>
-          <select id="aduFilter"></select>
-        </label>
-        <label>
-          <span>DADU allowed</span>
-          <select id="daduFilter"></select>
-        </label>
-        <label>
-          <span>Owner occupancy</span>
-          <select id="ownerOccFilter"></select>
-        </label>
-        <label class="search-label">
-          <span>Search</span>
-          <input
-            id="searchInput"
-            type="text"
-            placeholder="Search notes, height, setbacks, etc."
-          />
-        </label>
-      </div>
-      <div class="filters-footer">
-        <button id="clearFilters" class="btn-outline">Clear filters</button>
-        <p id="summary" class="summary-text"></p>
-      </div>
-    </section>
-
-    <!-- Map -->
-    <section class="card map-card">
-      <h2>Map view</h2>
-      <p class="section-help">
-        Click a city marker to see a quick ADU snapshot. Data comes from the same table below.
+    <!-- City scorecard -->
+    <section class="card scorecard">
+      <h2>City ADU Friendliness Index</h2>
+      <p class="scorecard-help">
+        Each city is scored on ADU count, parking flexibility, setbacks, height, impact fees,
+        and whether conversions and alleys are ADU-friendly.
       </p>
-      <div id="map"></div>
+      <div id="cityScorecards" class="scorecard-grid">
+        <!-- filled by JS -->
+      </div>
     </section>
 
-    <!-- Results Table -->
+    <!-- Filters + Map -->
+    <section class="layout-top">
+      <section class="card filters-card">
+        <h2>Filters</h2>
+        <div class="filters-grid">
+          <label>
+            <span>City</span>
+            <select id="cityFilter"></select>
+          </label>
+          <label>
+            <span>Zone</span>
+            <select id="zoneFilter"></select>
+          </label>
+          <label>
+            <span>Zone type</span>
+            <select id="zoneTypeFilter"></select>
+          </label>
+          <label>
+            <span>ADU allowed</span>
+            <select id="aduFilter"></select>
+          </label>
+          <label>
+            <span>DADU allowed</span>
+            <select id="daduFilter"></select>
+          </label>
+          <label>
+            <span>Owner occupancy</span>
+            <select id="ownerOccFilter"></select>
+          </label>
+          <label class="search-label">
+            <span>Search text</span>
+            <input
+              id="searchInput"
+              type="text"
+              placeholder="Search notes, code sections, setbacks, etc."
+            />
+          </label>
+        </div>
+        <div class="filters-footer">
+          <button id="clearFilters" class="btn-outline">Clear filters</button>
+          <p id="summary" class="summary-text"></p>
+        </div>
+      </section>
+
+      <section class="card map-card">
+        <h2>Map view</h2>
+        <p class="section-help">
+          Each marker represents at least one ADU-eligible zone in that city. Click to see a
+          quick summary for that jurisdiction.
+        </p>
+        <div id="map"></div>
+      </section>
+    </section>
+
+    <!-- Table -->
     <section class="card table-card">
       <h2>Regulation table</h2>
+      <p class="section-help">
+        This table is driven directly from the underlying CSV. Use filters above to narrow by city,
+        zone, or ADU characteristics.
+      </p>
       <div class="table-wrapper">
         <table id="resultsTable">
           <thead id="tableHead"></thead>
@@ -101,15 +117,13 @@
     </section>
   </main>
 
-  <!-- City comparison modal -->
+  <!-- Compare cities modal -->
   <div id="compareModal" class="modal">
     <div class="modal-content">
-      <button id="closeCompare" class="close" aria-label="Close comparison">
-        ×
-      </button>
-      <h2>City comparison</h2>
+      <button id="closeCompare" class="close" aria-label="Close comparison modal">×</button>
+      <h2>Compare cities</h2>
       <p class="modal-intro">
-        Select one or more cities to compare their ADU / DADU regulations side by side.
+        Select one or more cities to compare their ADU basics and dimensional envelopes.
       </p>
 
       <div class="compare-controls">
@@ -126,7 +140,8 @@
 
   <footer class="site-footer">
     <p>
-      Built by Eva de la Peña. This tool is informational only and does not constitute legal advice.
+      Built as an advisory tool. Always confirm against the current municipal code and consult
+      local staff before making investment decisions.
     </p>
   </footer>
 
