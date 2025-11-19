@@ -11,8 +11,8 @@
   --text-main: #111827;
   --text-muted: #6b7280;
   --text-inverse: #f9fafb;
-  --shadow-soft: 0 10px 28px rgba(15, 23, 42, 0.09);
-  --radius-lg: 16px;
+  --shadow-soft: 0 8px 24px rgba(15, 23, 42, 0.08);
+  --radius-lg: 14px;
   --radius-md: 10px;
   --radius-pill: 999px;
 }
@@ -25,8 +25,14 @@
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: radial-gradient(circle at top left, #dbeafe 0, #f3f6ff 40%, #eff6ff 100%);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  background: radial-gradient(
+    circle at top left,
+    #dbeafe 0,
+    #f3f6ff 40%,
+    #eff6ff 100%
+  );
   color: var(--text-main);
 }
 
@@ -38,7 +44,7 @@ body {
   background: var(--bg-header);
   color: var(--text-inverse);
   padding: 0.9rem 1.5rem;
-  box-shadow: 0 12px 40px rgba(15, 23, 42, 0.5);
+  box-shadow: 0 10px 40px rgba(15, 23, 42, 0.5);
   position: sticky;
   top: 0;
   z-index: 50;
@@ -48,25 +54,25 @@ body {
   max-width: 1180px;
   margin: 0 auto;
   display: flex;
-  gap: 1.1rem;
+  gap: 1rem;
   align-items: center;
   justify-content: space-between;
 }
 
 .header-inner h1 {
   margin: 0;
-  font-size: clamp(1.5rem, 2.3vw, 2rem);
+  font-size: clamp(1.4rem, 2vw, 1.9rem);
 }
 
 .subtitle {
-  margin: 0.15rem 0 0;
+  margin: 0.1rem 0 0;
   color: #cbd5f5;
   font-size: 0.85rem;
 }
 
 .header-actions {
   display: flex;
-  gap: 0.6rem;
+  gap: 0.5rem;
   align-items: center;
 }
 
@@ -76,97 +82,58 @@ body {
 
 .page-main {
   max-width: 1180px;
-  margin: 1.4rem auto 2.2rem;
-  padding: 0 1.2rem;
+  margin: 1.4rem auto 2rem;
+  padding: 0 1.1rem 0.25rem;
+  display: grid;
+  grid-template-areas:
+    "scorecard"
+    "filters"
+    "map"
+    "permits"
+    "table";
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
 }
 
 .card {
   background: var(--bg-card);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-soft);
-  padding: 1rem 1.1rem;
+  padding: 0.9rem 1rem;
 }
 
-.layout-top {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr);
-  gap: 1rem;
-  margin-top: 1rem;
-}
-
+/* Desktop: scorecard full width, filters + map side by side,
+   permits full width, then table full width */
 @media (min-width: 900px) {
-  .layout-top {
+  .page-main {
+    grid-template-areas:
+      "scorecard scorecard"
+      "filters map"
+      "permits permits"
+      "table table";
     grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.05fr);
-    align-items: stretch;
+    gap: 1.1rem;
   }
 }
 
-.filters-card h2,
-.map-card h2,
-.table-card h2,
-.scorecard h2 {
-  margin: 0 0 0.4rem;
-  font-size: 1rem;
+.scorecard {
+  grid-area: scorecard;
 }
 
-.section-help {
-  margin: 0 0 0.6rem;
-  font-size: 0.85rem;
-  color: var(--text-muted);
+.filters-card {
+  grid-area: filters;
 }
 
-/* =========================================
-   BUTTONS
-   ========================================= */
-
-button {
-  font-family: inherit;
+.map-card {
+  grid-area: map;
 }
 
-.btn-primary,
-.btn-secondary,
-.btn-outline {
-  border-radius: var(--radius-pill);
-  padding: 0.35rem 0.9rem;
-  font-size: 0.8rem;
-  border-width: 1px;
-  border-style: solid;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
+.permits-card {
+  grid-area: permits;
 }
 
-.btn-primary {
-  background: var(--bg-accent);
-  border-color: var(--bg-accent);
-  color: var(--text-inverse);
-}
-
-.btn-primary:hover {
-  background: #1e40af;
-  border-color: #1e40af;
-}
-
-.btn-secondary {
-  background: rgba(37, 99, 235, 0.15);
-  border-color: rgba(191, 219, 254, 0.9);
-  color: #e0ecff;
-}
-
-.btn-secondary:hover {
-  background: rgba(37, 99, 235, 0.25);
-}
-
-.btn-outline {
-  background: transparent;
-  border-color: var(--border-subtle);
-  color: var(--text-main);
-}
-
-.btn-outline:hover {
-  border-color: var(--bg-accent);
-  color: var(--bg-accent);
+.table-card {
+  grid-area: table;
 }
 
 /* =========================================
@@ -174,28 +141,38 @@ button {
    ========================================= */
 
 .scorecard {
-  margin-bottom: 1.2rem;
+  margin-bottom: 0.1rem;
+  padding: 0.9rem 1rem;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+.scorecard h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
 }
 
 .scorecard-help {
-  margin: 0 0 0.7rem;
-  font-size: 0.82rem;
-  color: var(--text-muted);
+  margin: 0 0 0.6rem;
+  font-size: 0.8rem;
+  color: #6b7280;
 }
 
 .scorecard-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.8rem;
+  gap: 0.75rem;
 }
 
 .scorecard-item {
   flex: 1 1 230px;
+  min-width: 0;
   max-width: 260px;
   background: #f9fbff;
-  border-radius: 12px;
-  padding: 0.6rem 0.75rem 0.7rem;
-  border: 1px solid rgba(148, 163, 184, 0.7);
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem 0.65rem;
+  border: 1px solid rgba(148, 163, 184, 0.6);
 }
 
 .scorecard-header {
@@ -212,7 +189,7 @@ button {
 
 .scorecard-grade {
   font-weight: 700;
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   padding: 0.05rem 0.45rem;
   border-radius: 999px;
   background: #1d4ed8;
@@ -254,11 +231,25 @@ button {
    FILTERS
    ========================================= */
 
+.filters-card h2,
+.map-card h2,
+.table-card h2,
+.permits-card h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+}
+
+.section-help {
+  margin: 0 0 0.6rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
 .filters-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 0.6rem 0.8rem;
-  margin-bottom: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.5rem 0.7rem;
+  margin-bottom: 0.5rem;
 }
 
 .filters-grid label span {
@@ -285,7 +276,7 @@ button {
 .filters-grid select:focus,
 .filters-grid input[type="text"]:focus {
   border-color: var(--bg-accent);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
   background: #ffffff;
 }
 
@@ -294,14 +285,68 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 0.6rem;
-  margin-top: 0.25rem;
+  margin-top: 0.35rem;
   flex-wrap: wrap;
 }
 
 .summary-text {
-  margin: 0;
+  margin: 0.25rem 0 0;
   font-size: 0.8rem;
   color: var(--text-muted);
+}
+
+/* =========================================
+   BUTTONS
+   ========================================= */
+
+button {
+  font-family: inherit;
+}
+
+.btn-primary,
+.btn-secondary,
+.btn-outline {
+  border-radius: var(--radius-pill);
+  padding: 0.3rem 0.8rem;
+  font-size: 0.8rem;
+  border-width: 1px;
+  border-style: solid;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.btn-primary {
+  background: var(--bg-accent);
+  border-color: var(--bg-accent);
+  color: var(--text-inverse);
+}
+
+.btn-primary:hover {
+  background: #1e40af;
+  border-color: #1e40af;
+}
+
+.btn-secondary {
+  background: rgba(37, 99, 235, 0.18);
+  border-color: rgba(191, 219, 254, 0.9);
+  color: #e0ecff;
+}
+
+.btn-secondary:hover {
+  background: rgba(37, 99, 235, 0.28);
+}
+
+.btn-outline {
+  background: transparent;
+  border-color: var(--border-subtle);
+  color: var(--text-main);
+}
+
+.btn-outline:hover {
+  border-color: var(--bg-accent);
+  color: var(--bg-accent);
 }
 
 /* =========================================
@@ -310,7 +355,7 @@ button {
 
 #map {
   width: 100%;
-  height: 320px;
+  height: 300px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
   overflow: hidden;
@@ -327,19 +372,125 @@ button {
 }
 
 /* =========================================
+   ADU PERMITS FEED
+   ========================================= */
+
+.permits-card {
+  padding-top: 0.8rem;
+}
+
+.permits-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: flex-end;
+  margin-bottom: 0.6rem;
+}
+
+.permits-filters label span {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 0.1rem;
+}
+
+.permits-filters select {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  padding: 0.3rem 0.55rem;
+  font-size: 0.8rem;
+  background: #f9fafb;
+}
+
+.permits-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  max-height: 260px;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.permit-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  background: #f9fafb;
+}
+
+.permit-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.permit-project {
+  color: #111827;
+}
+
+.permit-meta {
+  font-size: 0.75rem;
+  color: #4b5563;
+}
+
+.permit-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.1rem;
+}
+
+.permit-tag {
+  font-size: 0.7rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: #e0ebff;
+  color: #1d4ed8;
+}
+
+.permit-notes {
+  font-size: 0.75rem;
+  color: #4b5563;
+}
+
+.permit-link {
+  font-size: 0.75rem;
+}
+
+.permit-link a {
+  color: var(--bg-accent);
+  text-decoration: none;
+}
+
+.permit-link a:hover {
+  text-decoration: underline;
+}
+
+/* =========================================
    TABLE
    ========================================= */
 
 .table-card {
-  margin-top: 1.1rem;
+  padding-top: 0.8rem;
+}
+
+.table-card h2 {
+  margin-bottom: 0.3rem;
 }
 
 .table-wrapper {
-  max-height: 460px;
+  max-height: 430px;
   overflow: auto;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
-  background: #ffffff;
 }
 
 #resultsTable {
@@ -357,7 +508,7 @@ button {
 
 #resultsTable th,
 #resultsTable td {
-  padding: 0.4rem 0.6rem;
+  padding: 0.35rem 0.55rem;
   text-align: left;
   border-bottom: 1px solid #e5e7eb;
   vertical-align: top;
@@ -386,6 +537,7 @@ button {
 #resultsTable a {
   color: var(--bg-accent);
   text-decoration: none;
+  font-weight: 500;
 }
 
 #resultsTable a:hover {
@@ -393,7 +545,7 @@ button {
 }
 
 /* =========================================
-   MODAL
+   MODAL (COMPARE CITIES)
    ========================================= */
 
 .modal {
@@ -410,7 +562,7 @@ button {
   max-width: 960px;
   width: calc(100% - 2.5rem);
   margin: 4rem auto;
-  padding: 1.1rem 1.25rem 1.35rem;
+  padding: 1rem 1.25rem 1.25rem;
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.35);
   position: relative;
 }
@@ -421,8 +573,8 @@ button {
   color: #9ca3af;
   font-size: 1.6rem;
   position: absolute;
-  right: 0.8rem;
-  top: 0.4rem;
+  right: 0.85rem;
+  top: 0.5rem;
   cursor: pointer;
 }
 
@@ -473,17 +625,17 @@ button {
 .compare-results {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.7rem;
-  margin-top: 0.35rem;
+  gap: 0.6rem;
+  margin-top: 0.4rem;
 }
 
 .compare-card {
-  flex: 1 1 250px;
+  flex: 1 1 240px;
   min-width: 0;
   background: var(--bg-accent-soft);
   border-radius: var(--radius-md);
   padding: 0.6rem 0.7rem;
-  border: 1px solid rgba(37, 99, 235, 0.22);
+  border: 1px solid rgba(37, 99, 235, 0.2);
 }
 
 .compare-card h3 {
@@ -507,7 +659,7 @@ button {
 
 .site-footer {
   border-top: 1px solid rgba(148, 163, 184, 0.35);
-  padding: 0.7rem 1.2rem 1rem;
+  padding: 0.6rem 1.1rem 0.9rem;
   font-size: 0.78rem;
   text-align: center;
   color: var(--text-muted);
