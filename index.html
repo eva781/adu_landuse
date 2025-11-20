@@ -98,14 +98,23 @@
       </div>
     </section>
 
-    <!-- Map -->
-    <section class="card map-card">
-      <h2>Map view</h2>
-      <p class="section-help">
-        One marker per city in the dataset. Click for a quick ADU snapshot from the selected municipality.
-      </p>
-      <div id="map"></div>
-    </section>
+<section class="card map-card">
+  <h2>King County Parcel Viewer</h2>
+  <p class="section-help">
+    Use the official King County Parcel Viewer to look up parcels, zoning, and assessor reports.
+    Search by address or parcel number, then cross-check zoning against the ADU data on this site.
+  </p>
+
+  <div class="parcel-viewer-wrapper">
+    <iframe
+      src="https://gismaps.kingcounty.gov/parcelviewer2/"
+      title="King County Parcel Viewer"
+      loading="lazy"
+      referrerpolicy="no-referrer-when-downgrade"
+    ></iframe>
+  </div>
+</section>
+
 
     <!-- Feasibility checker -->
     <section class="card feasibility-card">
