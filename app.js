@@ -959,17 +959,253 @@ function initFeasibility() {
     const nearTransit = !!transitCb.checked;
     const hasAlley = !!alleyCb.checked;
 
-    runFeasibilityCheck(
-      city,
-      zone,
-      lotSize,
-      aduSize,
-      nearTransit,
-      hasAlley,
-      lotWidth,
-      lotDepth,
-      houseWidth,
-      houseDepth
+function runFeasibilityCheck(
+  city,
+  zone,
+  lotSize,
+  aduSize,
+  nearTransit,
+  hasAlley,
+  lotWidth,
+  lotDepth,
+  houseWidth,
+  houseDepth
+) {
+  const summaryEl = document.getElementById("feasibilitySummary");
+  const detailsEl = document.getElementById("feasibilityDetails");
+  const diagramEl = document.getElementById("feasDiagram");
+  if (!summaryEl || !detailsEl || !diagramEl) return;
+
+  detailsEl.innerHTML = "";
+  diagramEl.innerHTML = "";
+
+  if (!city || !zone) {
+    summaryEl.textContent = "Select a city and zone to run a check.";
+    return;
+  }
+
+  if (lotSize == null || isNaN(lotSize) || lotSize <= 0) {
+    summaryEl.textContent = "Enter a valid lot size in square feet.";
+    return;
+  }
+
+  const cityIdx = headerIndex(COL.city);
+  const zoneIdx = headerIndex(COL.zone);
+
+  const matches = rawRows.filter(
+    (row) =>
+      (row[cityIdx] || "").trim() === city &&
+      (row[zoneIdx] || "").trim() === zone
+  );
+
+  if (!matches.length) {
+    summaryEl.textContent =
+      "No rows found for that city/zone combination in the dataset.";
+    return;
+  }
+
+  const row = matches[0];
+
+  // ---- existing feasibility logic (unchanged structurally) ----
+  const aduAllowed = (get(row, COL.aduAllowed) || "").toLowerCase();
+  const daduAllowed = (get(row, COL.daduAllowed) || "").toLowerCase();
+  const minLotSize = toNumber(get(row, COL.minLotSize));
+  const maxADUSize = toNumber(get(row, COL.maxADUSize));
+  const maxDADUSize = toNumber(get(row, COL.maxDADUSize));
+  const parkingReq = (get(row, COL.aduParkingReq) || "").toLowerCase();
+  const parkingNotes = get(row, COL.parkingNotes) || "";
+  const parkingTransitFlag = (get(row, COL.aduParkingTransit) || "").toLowerCase();
+  const parkingSmallFlag = (get(row, COL.aduParkingSmall) || "").toLowerCase();
+  const ownerOcc = get(row, COL.ownerOcc) || "";
+  const frontSetback = get(row, COL.frontSetback);
+  const sideSetback = get(row, COL.sideSetback);
+  const rearSetback = get(row, COL.rearSetback);
+  const heightPrimary = get(row, COL.heightPrimary);
+  const heightDADU = get(row, COL.heightDADU);
+  const impactFees = get(row, COL.impactFees);
+  const notes = get(row, COL.notes);
+  const daduSetbackNotes = get(row, COL.daduSetbackNotes);
+
+  const bulletPoints = [];
+  let feasibilityOK = true;
+
+  // ADU / DADU allowed?
+  if (aduAllowed === "yes" || aduAllowed === "y" || aduAllowed === "true") {
+    bulletPoints.push("ADUs are allowed in this zone.");
+  } else if (aduAllowed) {
+    bulletPoints.push(`ADUs may be restricted: ADU_Allowed = "${aduAllowed}".`);
+    feasibilityOK = false;
+  } else {
+    bulletPoints.push("ADU allowance is not clearly specified in the dataset.");
+  }
+
+  if (daduAllowed === "yes" || daduAllowed === "y" || daduAllowed === "true") {
+    bulletPoints.push("Detached ADUs (DADUs) are allowed in this zone.");
+  } else if (daduAllowed) {
+    bulletPoints.push(
+      `Detached ADUs may be restricted: DADU_Allowed = "${daduAllowed}".`
+    );
+  }
+
+  // Lot size vs min lot size
+  if (minLotSize != null) {
+    if (lotSize >= minLotSize) {
+      bulletPoints.push(
+        `Lot size (${lotSize.toLocaleString()} sf) meets the minimum lot size (${minLotSize.toLocaleString()} sf).`
+      );
+    } else {
+      bulletPoints.push(
+        `Lot size (${lotSize.toLocaleString()} sf) is below the minimum lot size (${minLotSize.toLocaleString()} sf) recorded for this zone.`
+      );
+      feasibilityOK = false;
+    }
+  } else {
+    bulletPoints.push("Minimum lot size is not defined in the dataset.");
+  }
+
+  // ADU size vs max
+  if (aduSize != null && !isNaN(aduSize) && aduSize > 0) {
+    if (maxADUSize != null) {
+      if (aduSize <= maxADUSize) {
+        bulletPoints.push(
+          `Target ADU size (${aduSize} sf) is within the maximum ADU size (${maxADUSize} sf).`
+        );
+      } else {
+        bulletPoints.push(
+          `Target ADU size (${aduSize} sf) exceeds the maximum ADU size (${maxADUSize} sf) recorded for this zone.`
+        );
+        feasibilityOK = false;
+      }
+    } else {
+      bulletPoints.push(
+        "Maximum ADU size is not explicitly recorded; confirm against the municipal code."
+      );
+    }
+  } else {
+    bulletPoints.push(
+      "No ADU size entered; size-based feasibility not evaluated."
+    );
+  }
+
+  // Parking logic
+  let parkingSummary = "";
+  if (!parkingReq) {
+    parkingSummary =
+      "Parking requirement not clearly recorded; check code for stall counts.";
+  } else if (parkingReq === "no") {
+    parkingSummary = "Dataset indicates no additional ADU parking is required.";
+  } else {
+    let base = "ADU parking is required per the dataset.";
+    let relief = [];
+
+    if (
+      nearTransit &&
+      (parkingTransitFlag === "yes" ||
+        parkingNotes.toLowerCase().includes("transit"))
+    ) {
+      relief.push("near transit");
+    }
+    if (
+      aduSize != null &&
+      aduSize > 0 &&
+      (parkingSmallFlag === "yes" ||
+        parkingNotes.toLowerCase().includes("small"))
+    ) {
+      relief.push("small-unit exemption");
+    }
+
+    if (relief.length) {
+      parkingSummary =
+        base +
+        ` However, exemptions/relief are likely available due to ${relief.join(
+          " and "
+        )}.`;
+    } else {
+      parkingSummary = base;
+    }
+  }
+  bulletPoints.push(parkingSummary);
+
+  // Alley flex
+  if (hasAlley) {
+    if (
+      (get(row, COL.alleyAccess) || "").toLowerCase() === "yes" ||
+      daduSetbackNotes.toLowerCase().includes("alley")
+    ) {
+      bulletPoints.push(
+        "Alley access is available and the dataset notes special alley-facing standards that may reduce rear/side setbacks."
+      );
+    } else {
+      bulletPoints.push(
+        "Alley access is present but no explicit alley-based relief is recorded; check code text for possible reduced setbacks."
+      );
+    }
+  }
+
+  // Setbacks / height
+  const sh = [];
+  if (frontSetback) sh.push(`front: ${frontSetback} ft`);
+  if (sideSetback) sh.push(`side: ${sideSetback} ft`);
+  if (rearSetback) sh.push(`rear: ${rearSetback} ft`);
+  if (sh.length) {
+    bulletPoints.push(`Base setbacks in the dataset: ${sh.join(", ")}.`);
+  }
+
+  const hh = [];
+  if (heightPrimary) hh.push(`primary: ${heightPrimary} ft`);
+  if (heightDADU) hh.push(`DADU: ${heightDADU} ft`);
+  if (hh.length) {
+    bulletPoints.push(`Height limits: ${hh.join(", ")}.`);
+  }
+
+  // Owner occupancy & fees
+  if (ownerOcc) {
+    bulletPoints.push(`Owner-occupancy: ${ownerOcc}.`);
+  }
+  if (impactFees) {
+    bulletPoints.push(`Impact fee notes: ${impactFees}.`);
+  }
+  if (notes) {
+    bulletPoints.push(`Zone notes: ${notes}`);
+  }
+
+  summaryEl.innerHTML = feasibilityOK
+    ? `<span class="feasibility-good">Likely feasible</span> based on the dataset for one ADU/DADU in ${city} ${zone}, subject to formal review.`
+    : `<span class="feasibility-bad">Potential issues detected</span> — see details and confirm with the city.`;
+
+  const h3 = document.createElement("h3");
+  h3.textContent = "Key checks";
+
+  const ul = document.createElement("ul");
+  bulletPoints.forEach((text) => {
+    const li = document.createElement("li");
+    li.textContent = text;
+    ul.appendChild(li);
+  });
+
+  const disclaimer = document.createElement("p");
+  disclaimer.style.marginTop = "0.4rem";
+  disclaimer.style.fontSize = "0.75rem";
+  disclaimer.style.color = "#6b7280";
+  disclaimer.textContent =
+    "This is a simplified feasibility snapshot generated from your spreadsheet and may not capture overlays, critical areas, or recent code changes. Always verify with the municipal code and planning staff.";
+
+  detailsEl.appendChild(h3);
+  detailsEl.appendChild(ul);
+  detailsEl.appendChild(disclaimer);
+
+  // ---- NEW: design envelope diagram ----
+  drawFeasDiagram(
+    row,
+    lotSize,
+    lotWidth,
+    lotDepth,
+    houseWidth,
+    houseDepth,
+    aduSize
+  );
+}
+
     );
   });
 }
