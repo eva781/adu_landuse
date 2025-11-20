@@ -113,55 +113,83 @@
 </section>
 
 
-    <!-- Feasibility checker -->
-    <section class="card feasibility-card">
-      <h2>Lot-level feasibility check</h2>
-      <p class="section-help">
-        Enter a city, zone, and lot to get a quick read on whether an ADU or DADU is feasible under your current dataset
-        &mdash; including size caps, lot minimums, and likely parking expectations. This is informational only, not a zoning decision.
-      </p>
+<section class="card feasibility-card">
+  <h2>Lot-level feasibility check</h2>
+  <p class="section-help">
+    Enter a city, zone, and rough lot dimensions to get a quick read on whether an ADU or DADU is feasible
+    under your current dataset — then see a conceptual layout of the lot, existing home, and ADU envelope.
+    This is informational only, not a zoning decision.
+  </p>
 
-      <div class="feasibility-grid">
-        <label>
-          <span>City</span>
-          <select id="feasCity"></select>
-        </label>
+  <div class="feasibility-grid">
+    <label>
+      <span>City</span>
+      <select id="feasCity"></select>
+    </label>
 
-        <label>
-          <span>Zone</span>
-          <select id="feasZone"></select>
-        </label>
+    <label>
+      <span>Zone</span>
+      <select id="feasZone"></select>
+    </label>
 
-        <label>
-          <span>Lot size (sq ft)</span>
-          <input id="feasLotSize" type="number" min="0" placeholder="e.g. 5000" />
-        </label>
+    <label>
+      <span>Lot size (sq ft)</span>
+      <input id="feasLotSize" type="number" min="0" placeholder="e.g. 5000" />
+    </label>
 
-        <label>
-          <span>Target ADU size (sq ft)</span>
-          <input id="feasADUSize" type="number" min="0" placeholder="e.g. 800" />
-        </label>
+    <label>
+      <span>Lot width (ft)</span>
+      <input id="feasLotWidth" type="number" min="0" placeholder="optional, e.g. 40" />
+    </label>
 
-        <label class="checkbox-label">
-          <input id="feasTransit" type="checkbox" />
-          <span>Within ~0.5 mi of frequent transit</span>
-        </label>
+    <label>
+      <span>Lot depth (ft)</span>
+      <input id="feasLotDepth" type="number" min="0" placeholder="optional, e.g. 100" />
+    </label>
 
-        <label class="checkbox-label">
-          <input id="feasAlley" type="checkbox" />
-          <span>Alley access to rear yard</span>
-        </label>
-      </div>
+    <label>
+      <span>Existing home width (ft)</span>
+      <input id="feasHouseWidth" type="number" min="0" placeholder="e.g. 30" />
+    </label>
 
-      <div class="feasibility-actions">
-        <button id="runFeasibility" class="btn-primary">Check feasibility</button>
-        <p id="feasibilitySummary" class="summary-text"></p>
-      </div>
+    <label>
+      <span>Existing home depth (ft)</span>
+      <input id="feasHouseDepth" type="number" min="0" placeholder="e.g. 40" />
+    </label>
 
-      <div id="feasibilityDetails" class="feasibility-details">
-        <!-- Filled by app.js -->
-      </div>
-    </section>
+    <label>
+      <span>Target ADU size (sq ft)</span>
+      <input id="feasADUSize" type="number" min="0" placeholder="e.g. 800" />
+    </label>
+
+    <label class="checkbox-label">
+      <input id="feasTransit" type="checkbox" />
+      <span>Within ~0.5 mi of frequent transit</span>
+    </label>
+
+    <label class="checkbox-label">
+      <input id="feasAlley" type="checkbox" />
+      <span>Alley access to rear yard</span>
+    </label>
+  </div>
+
+  <div class="feasibility-actions">
+    <button id="runFeasibility" class="btn-primary">
+      Check feasibility &amp; visualize
+    </button>
+    <p id="feasibilitySummary" class="summary-text"></p>
+  </div>
+
+  <div class="feasibility-layout">
+    <div id="feasDiagram" class="feasibility-canvas">
+      <!-- lot + home + ADU diagram injected here -->
+    </div>
+
+    <div id="feasibilityDetails" class="feasibility-details">
+      <!-- text bullets injected here -->
+    </div>
+  </div>
+</section>
 
     <!-- ADU activity feed -->
     <section class="card permits-card">
