@@ -429,7 +429,108 @@ button {
 
 .feasibility-card {
   padding-top: 0.8rem;
+   
 }
+/* Layout of diagram + details side by side */
+.feasibility-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr);
+  gap: 0.7rem;
+  align-items: stretch;
+}
+
+@media (max-width: 799px) {
+  .feasibility-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.feasibility-canvas {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: #eef2ff;
+  padding: 0.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Re-use our envelope visual styles, now inside feasibility */
+
+.lot-box {
+  position: relative;
+  width: 100%;
+  padding-top: 70%; /* aspect ratio box */
+  border-radius: 10px;
+  border: 2px solid #94a3b8;
+  background: #e5e7eb;
+  overflow: hidden;
+}
+
+.lot-label {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  font-size: 0.7rem;
+  color: #4b5563;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 0 0.25rem;
+  border-radius: 8px;
+}
+
+.buildable-box {
+  position: absolute;
+  border-radius: 8px;
+  border: 2px dashed #1d4ed8;
+  background: rgba(191, 219, 254, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.buildable-label {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 0.7rem;
+  color: #1d4ed8;
+  background: rgba(239, 246, 255, 0.9);
+  padding: 0 0.25rem;
+  border-radius: 8px;
+}
+
+.primary-box {
+  position: absolute;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.95);
+  box-shadow: 0 0 0 2px rgba(209, 213, 219, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.primary-label {
+  font-size: 0.7rem;
+  color: #f9fafb;
+  padding: 0 0.35rem;
+}
+
+.adu-box {
+  position: absolute;
+  border-radius: 6px;
+  background: rgba(37, 99, 235, 0.9);
+  box-shadow: 0 0 0 2px rgba(191, 219, 254, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.adu-label {
+  font-size: 0.7rem;
+  color: #eff6ff;
+  padding: 0 0.35rem;
+}
+
 
 .feasibility-grid {
   display: grid;
