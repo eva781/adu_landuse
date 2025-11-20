@@ -438,9 +438,30 @@ button {
   gap: 0.7rem;
   align-items: stretch;
 }
+#feasDiagram {
+  height: 260px;      /* or 280px if you want taller */
+  max-height: 260px;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* Already suggested but repeating for clarity */
 #feasDiagram svg {
   user-select: none;
   cursor: default;
+}
+
+.shape-group rect {
+  cursor: grab;
+}
+
+.shape-group rect:active {
+  cursor: grabbing;
+}
+
+.resize-handle,
+.lot-handle {
+  pointer-events: all;
 }
 
 .shape-group rect {
