@@ -873,10 +873,32 @@ function renderPermits() {
     list.appendChild(item);
   });
 }
+// =========================================
+// FEASIBILITY CHECKER (INTERACTIVE DIAGRAM)
+// =========================================
 
-// =========================================
-// FEASIBILITY CHECKER (FIXED)
-// =========================================
+// Global-ish state for the interactive feasibility diagram
+const FEAS_DIAGRAM_STATE = {
+  scale: 1,
+  drawWidthPx: 900,
+  drawHeightPx: 500,
+  marginPx: 40,
+  lot: {
+    widthFt: 40,
+    depthFt: 100,
+    maxFt: 200,
+    frontSetFt: 20,
+    sideSetFt: 5,
+    rearSetFt: 25,
+  },
+  home: null,  // { xFt, yFt, widthFt, depthFt }
+  adu: null,   // { xFt, yFt, widthFt, depthFt, baseTargetSqft }
+  svg: null,
+  dragging: null,   // { shape: 'home'|'adu', offsetXFt, offsetYFt }
+  resizing: null,   // { shape: 'home'|'adu', corner: 'tl'|'tr'|'bl'|'br' }
+  lotResize: null,  // { edge: 'right'|'bottom' }
+  _mouseHandlersAttached: false,
+};
 
 function initFeasibility() {
   const citySel = document.getElementById("feasCity");
@@ -895,6 +917,8 @@ function initFeasibility() {
     !citySel ||
     !zoneSel ||
     !lotSizeInput ||
+    !lotWidthInput ||
+    !lotDepthInput ||
     !aduInput ||
     !transitCb ||
     !alleyCb ||
@@ -903,7 +927,7 @@ function initFeasibility() {
     return;
   }
 
-  // Fill city options
+  // ---- Fill city options ----
   citySel.innerHTML = "";
   const cities = uniqueValues(COL.city);
   const optBlankCity = document.createElement("option");
@@ -948,6 +972,7 @@ function initFeasibility() {
     fillZonesForCity(citySel.value || "");
   });
 
+  // ---- Run feasibility on click ----
   runBtn.addEventListener("click", () => {
     const city = citySel.value || "";
     const zone = zoneSel.value || "";
@@ -974,6 +999,9 @@ function initFeasibility() {
     );
   });
 
+  // -----------------------------
+  // Inner: feasibility evaluation
+  // -----------------------------
   function runFeasibilityCheck(
     city,
     zone,
@@ -999,7 +1027,13 @@ function initFeasibility() {
       return;
     }
 
-    if (lotSize == null || isNaN(lotSize) || lotSize <= 0) {
+    // If lot width/depth provided but lotSize not, compute it
+    if (!lotSize && lotWidth && lotDepth) {
+      lotSize = Math.round(lotWidth * lotDepth);
+      lotSizeInput.value = lotSize;
+    }
+
+    if (!lotSize || isNaN(lotSize) || lotSize <= 0) {
       summaryEl.textContent = "Enter a valid lot size in square feet.";
       return;
     }
@@ -1208,6 +1242,7 @@ function initFeasibility() {
     detailsEl.appendChild(ul);
     detailsEl.appendChild(disclaimer);
 
+    // Draw / update the interactive diagram
     drawFeasDiagram(
       row,
       lotSize,
@@ -1219,6 +1254,9 @@ function initFeasibility() {
     );
   }
 
+  // ---------------------------------------
+  // Inner: interactive diagram with editing
+  // ---------------------------------------
   function drawFeasDiagram(
     row,
     lotSize,
@@ -1231,134 +1269,451 @@ function initFeasibility() {
     const diagramEl = document.getElementById("feasDiagram");
     if (!diagramEl) return;
 
-    // Derive lot width/depth if missing
-    let lotWidth = lotWidthInput;
-    let lotDepth = lotDepthInput;
+    // ----- LOT & SCALE SETUP (IN FEET) -----
+    const lotWidthFt = lotWidthInput && lotWidthInput > 0 ? lotWidthInput : 40;
+    const lotDepthFt = lotDepthInput && lotDepthInput > 0 ? lotDepthInput : 100;
 
-    if (!lotWidth && !lotDepth && lotSize) {
-      const side = Math.sqrt(lotSize);
-      lotWidth = side;
-      lotDepth = side;
-    } else if (!lotWidth && lotDepth && lotSize) {
-      lotWidth = lotSize / lotDepth;
-    } else if (lotWidth && !lotDepth && lotSize) {
-      lotDepth = lotSize / lotWidth;
-    }
+    const frontSetFt = toNumber(get(row, COL.frontSetback)) ?? 20;
+    const sideSetFt = toNumber(get(row, COL.sideSetback)) ?? 5;
+    const rearSetFt = toNumber(get(row, COL.rearSetback)) ?? 25;
 
-    if (!lotWidth) lotWidth = 40;
-    if (!lotDepth) lotDepth = 100;
+    FEAS_DIAGRAM_STATE.lot.widthFt = lotWidthFt;
+    FEAS_DIAGRAM_STATE.lot.depthFt = lotDepthFt;
+    FEAS_DIAGRAM_STATE.lot.frontSetFt = frontSetFt;
+    FEAS_DIAGRAM_STATE.lot.sideSetFt = sideSetFt;
+    FEAS_DIAGRAM_STATE.lot.rearSetFt = rearSetFt;
 
-    const frontSet = toNumber(get(row, COL.frontSetback)) || 0;
-    const sideSet = toNumber(get(row, COL.sideSetback)) || 0;
-    const rearSet = toNumber(get(row, COL.rearSetback)) || 0;
+    // allow some headroom so user can drag lot a bit larger
+    const maxFt = Math.max(lotWidthFt, lotDepthFt, 200);
+    FEAS_DIAGRAM_STATE.lot.maxFt = maxFt;
 
-    const coveragePct =
-      toNumber(get(row, COL.maxHardSurface)) ||
-      toNumber(get(row, COL.maxImpervious));
+    const marginPx = FEAS_DIAGRAM_STATE.marginPx;
+    const drawWidthPx = FEAS_DIAGRAM_STATE.drawWidthPx;
+    const drawHeightPx = FEAS_DIAGRAM_STATE.drawHeightPx;
 
-    const buildableWidth = Math.max(lotWidth - 2 * sideSet, lotWidth * 0.4);
-    const buildableDepth = Math.max(
-      lotDepth - frontSet - rearSet,
-      lotDepth * 0.4
+    const scale = (drawWidthPx - 2 * marginPx) / maxFt;
+    FEAS_DIAGRAM_STATE.scale = scale;
+
+    // funcs: feet <-> px in lot coordinates
+    const lotLeftPx = marginPx;
+    const lotTopPx = marginPx;
+    const ftToPxX = (ft) => lotLeftPx + ft * scale;
+    const ftToPxY = (ft) => lotTopPx + ft * scale;
+    const pxToFtX = (px) => (px - lotLeftPx) / scale;
+    const pxToFtY = (px) => (px - lotTopPx) / scale;
+
+    // ----- BUILDABLE AREA (IN FEET) -----
+    const buildableLeftFt = sideSetFt;
+    const buildableTopFt = frontSetFt;
+    const buildableWidthFt = Math.max(
+      FEAS_DIAGRAM_STATE.lot.widthFt - 2 * sideSetFt,
+      5
+    );
+    const buildableHeightFt = Math.max(
+      FEAS_DIAGRAM_STATE.lot.depthFt - frontSetFt - rearSetFt,
+      5
     );
 
-    const buildableArea = buildableWidth * buildableDepth;
+    // ----- INITIAL HOME & ADU IF NOT ALREADY CREATED -----
+    if (!FEAS_DIAGRAM_STATE.home || !FEAS_DIAGRAM_STATE.adu) {
+      const defaultHomeWidthFt = FEAS_DIAGRAM_STATE.lot.widthFt * 0.6;
+      const defaultHomeDepthFt = FEAS_DIAGRAM_STATE.lot.depthFt * 0.35;
 
-    // Primary home footprint (front part of buildable area)
-    let houseWidth = houseWidthInput;
-    let houseDepth = houseDepthInput;
+      const homeWidthFt =
+        houseWidthInput && houseWidthInput > 0
+          ? houseWidthInput
+          : defaultHomeWidthFt;
+      const homeDepthFt =
+        houseDepthInput && houseDepthInput > 0
+          ? houseDepthInput
+          : defaultHomeDepthFt;
 
-    if (!houseWidth || !houseDepth) {
-      // default to front ~40% of lot width/depth
-      houseWidth = lotWidth * 0.6;
-      houseDepth = lotDepth * 0.35;
-    }
+      const homeXFt =
+        buildableLeftFt + (buildableWidthFt - homeWidthFt) * 0.5;
+      const homeYFt = buildableTopFt + 2;
 
-    // ADU footprint, based on size & coverage
-    let footprintArea = aduSize || null;
-    if (coveragePct != null && lotSize) {
-      const maxFromCoverage = (coveragePct / 100) * lotSize;
-      if (footprintArea != null) {
-        footprintArea = Math.min(footprintArea, maxFromCoverage);
-      } else {
-        footprintArea = maxFromCoverage * 0.4;
+      let aduWidthFt = 20;
+      let aduDepthFt = 20;
+      if (aduSize && aduSize > 0) {
+        const side = Math.sqrt(aduSize);
+        aduWidthFt = side;
+        aduDepthFt = side;
       }
-    } else if (!footprintArea && buildableArea) {
-      footprintArea = buildableArea * 0.2;
+
+      aduWidthFt = Math.min(aduWidthFt, buildableWidthFt * 0.8);
+      aduDepthFt = Math.min(aduDepthFt, buildableHeightFt * 0.6);
+
+      const aduXFt = buildableLeftFt + (buildableWidthFt - aduWidthFt) * 0.5;
+      const aduYFt =
+        buildableTopFt + buildableHeightFt - aduDepthFt - 2;
+
+      FEAS_DIAGRAM_STATE.home = {
+        xFt: homeXFt,
+        yFt: homeYFt,
+        widthFt: homeWidthFt,
+        depthFt: homeDepthFt,
+      };
+
+      FEAS_DIAGRAM_STATE.adu = {
+        xFt: aduXFt,
+        yFt: aduYFt,
+        widthFt: aduWidthFt,
+        depthFt: aduDepthFt,
+        baseTargetSqft: aduSize || null,
+      };
     }
 
-    const buildableWidthPct = Math.max(
-      15,
-      Math.min(100, (buildableWidth / lotWidth) * 100)
-    );
-    const buildableHeightPct = Math.max(
-      15,
-      Math.min(100, (buildableDepth / lotDepth) * 100)
-    );
+    const lotLabel =
+      "Lot" + (lotSize ? ` (${lotSize.toLocaleString()} sf)` : "");
 
-    // Represent house & ADU footprints as percentages of buildable box
-    let houseWidthFactor = Math.max(
-      0.2,
-      Math.min(0.9, (houseWidth / buildableWidth) || 0.5)
-    );
-    let houseDepthFactor = Math.max(
-      0.2,
-      Math.min(0.7, (houseDepth / buildableDepth) || 0.4)
-    );
-
-    let aduFactor = 0.4;
-    if (footprintArea && buildableArea > 0) {
-      const ratio = footprintArea / buildableArea;
-      aduFactor = Math.max(0.2, Math.min(0.8, Math.sqrt(ratio)));
-    }
-
-    const houseWidthPct = houseWidthFactor * 100;
-    const houseHeightPct = houseDepthFactor * 100;
-    const aduWidthPct = aduFactor * 100;
-    const aduHeightPct = aduFactor * 100;
-
-    // Positions:
-    // - Buildable box is centered
-    // - House sits toward the front
-    // - ADU sits toward the rear, roughly centered horizontally
-
-    const buildableTop = (100 - buildableHeightPct) / 2;
-    const buildableLeft = (100 - buildableWidthPct) / 2;
-
-    const houseTop = buildableTop + 4; // front-ish
-    const houseLeft =
-      buildableLeft + (buildableWidthPct - houseWidthPct) * 0.1;
-
-    const aduTop =
-      buildableTop + buildableHeightPct - aduHeightPct - 4; // rear-ish
-    const aduLeft =
-      buildableLeft + (buildableWidthPct - aduWidthPct) * 0.5;
-
+    // ----- SVG SKELETON -----
     diagramEl.innerHTML = `
-      <div class="lot-box">
-        <div class="lot-label">Lot${lotSize ? " (" + lotSize.toLocaleString() + " sf)" : ""}</div>
-        <div
-          class="buildable-box"
-          style="top:${buildableTop}%;left:${buildableLeft}%;width:${buildableWidthPct}%;height:${buildableHeightPct}%;"
-        >
-          <div class="buildable-label">Buildable area</div>
+      <svg id="feasSvg" width="100%" height="100%" viewBox="0 0 ${drawWidthPx} ${drawHeightPx}">
+        <!-- Lot outline -->
+        <rect id="lotRect"
+              x="${lotLeftPx}" y="${lotTopPx}"
+              width="${FEAS_DIAGRAM_STATE.lot.widthFt * scale}"
+              height="${FEAS_DIAGRAM_STATE.lot.depthFt * scale}"
+              fill="#f9fafb" stroke="#9ca3af" stroke-width="2" rx="10" ry="10" />
+        <text id="lotLabel"
+              x="${lotLeftPx + 8}" y="${lotTopPx + 16}"
+              font-size="12" fill="#4b5563">
+          ${lotLabel}
+        </text>
 
-          <div
-            class="primary-box"
-            style="top:${houseTop - buildableTop}%;left:${houseLeft - buildableLeft}%;width:${houseWidthPct}%;height:${houseHeightPct}%;"
-          >
-            <span class="primary-label">Existing home</span>
-          </div>
+        <!-- Buildable area -->
+        <rect id="buildableRect"
+              x="${ftToPxX(buildableLeftFt)}"
+              y="${ftToPxY(buildableTopFt)}"
+              width="${buildableWidthFt * scale}"
+              height="${buildableHeightFt * scale}"
+              fill="rgba(59,130,246,0.06)"
+              stroke="#3b82f6" stroke-dasharray="4 4" stroke-width="1.5"
+              rx="6" ry="6" />
+        <text id="buildableLabel"
+              x="${ftToPxX(buildableLeftFt) + 6}"
+              y="${ftToPxY(buildableTopFt) + 16}"
+              font-size="11" fill="#1f2937">
+          Buildable area (setbacks)
+        </text>
 
-          <div
-            class="adu-box"
-            style="top:${aduTop - buildableTop}%;left:${aduLeft - buildableLeft}%;width:${aduWidthPct}%;height:${aduHeightPct}%;"
-          >
-            <span class="adu-label">ADU</span>
-          </div>
-        </div>
-      </div>
+        <!-- Lot edge handles (right & bottom) -->
+        <circle id="lotHandleRight"
+                class="lot-handle"
+                cx="${lotLeftPx + FEAS_DIAGRAM_STATE.lot.widthFt * scale}"
+                cy="${lotTopPx + (FEAS_DIAGRAM_STATE.lot.depthFt * scale) / 2}"
+                r="6" fill="#10b981" stroke="#064e3b" stroke-width="1.5" />
+        <circle id="lotHandleBottom"
+                class="lot-handle"
+                cx="${lotLeftPx + (FEAS_DIAGRAM_STATE.lot.widthFt * scale) / 2}"
+                cy="${lotTopPx + FEAS_DIAGRAM_STATE.lot.depthFt * scale}"
+                r="6" fill="#10b981" stroke="#064e3b" stroke-width="1.5" />
+
+        <!-- Existing home group -->
+        <g id="homeGroup" class="shape-group" data-shape="home">
+          <rect id="homeRect" fill="#111827" rx="6" ry="6" />
+          <text id="homeLabel" fill="#e5e7eb" font-size="11"></text>
+          <circle class="resize-handle" data-shape="home" data-corner="tl" r="5" fill="#fbbf24" />
+          <circle class="resize-handle" data-shape="home" data-corner="tr" r="5" fill="#fbbf24" />
+          <circle class="resize-handle" data-shape="home" data-corner="bl" r="5" fill="#fbbf24" />
+          <circle class="resize-handle" data-shape="home" data-corner="br" r="5" fill="#fbbf24" />
+        </g>
+
+        <!-- ADU group -->
+        <g id="aduGroup" class="shape-group" data-shape="adu">
+          <rect id="aduRect" fill="rgba(79,70,229,0.85)" rx="6" ry="6" />
+          <text id="aduLabel" fill="#eef2ff" font-size="11"></text>
+          <circle class="resize-handle" data-shape="adu" data-corner="tl" r="5" fill="#f97316" />
+          <circle class="resize-handle" data-shape="adu" data-corner="tr" r="5" fill="#f97316" />
+          <circle class="resize-handle" data-shape="adu" data-corner="bl" r="5" fill="#f97316" />
+          <circle class="resize-handle" data-shape="adu" data-corner="br" r="5" fill="#f97316" />
+        </g>
+
+        <text x="${lotLeftPx + (FEAS_DIAGRAM_STATE.lot.widthFt * scale) / 2}"
+              y="${lotTopPx - 6}"
+              text-anchor="middle" font-size="11" fill="#6b7280">
+          Street / front of lot
+        </text>
+      </svg>
     `;
+
+    const svg = document.getElementById("feasSvg");
+    FEAS_DIAGRAM_STATE.svg = svg;
+
+    const lotRect = document.getElementById("lotRect");
+    const lotLabelEl = document.getElementById("lotLabel");
+    const buildableRect = document.getElementById("buildableRect");
+    const buildableLabel = document.getElementById("buildableLabel");
+    const lotHandleRight = document.getElementById("lotHandleRight");
+    const lotHandleBottom = document.getElementById("lotHandleBottom");
+    const homeRect = document.getElementById("homeRect");
+    const aduRect = document.getElementById("aduRect");
+    const homeLabel = document.getElementById("homeLabel");
+    const aduLabel = document.getElementById("aduLabel");
+    const homeGroup = document.getElementById("homeGroup");
+    const aduGroup = document.getElementById("aduGroup");
+    const handles = svg.querySelectorAll(".resize-handle");
+
+    // Clamp a shape inside current lot bounds
+    function clampShape(shape) {
+      const lot = FEAS_DIAGRAM_STATE.lot;
+      shape.xFt = Math.max(0, Math.min(lot.widthFt - shape.widthFt, shape.xFt));
+      shape.yFt = Math.max(0, Math.min(lot.depthFt - shape.depthFt, shape.yFt));
+    }
+
+    // Redraw everything from FEAS_DIAGRAM_STATE
+    function redrawAll() {
+      const lot = FEAS_DIAGRAM_STATE.lot;
+      const home = FEAS_DIAGRAM_STATE.home;
+      const adu = FEAS_DIAGRAM_STATE.adu;
+      const scale = FEAS_DIAGRAM_STATE.scale;
+
+      clampShape(home);
+      clampShape(adu);
+
+      // Lot rect
+      lotRect.setAttribute("x", lotLeftPx);
+      lotRect.setAttribute("y", lotTopPx);
+      lotRect.setAttribute("width", lot.widthFt * scale);
+      lotRect.setAttribute("height", lot.depthFt * scale);
+
+      const lotArea = Math.round(lot.widthFt * lot.depthFt);
+      lotLabelEl.textContent =
+        "Lot" + (lotArea ? ` (${lotArea.toLocaleString()} sf)` : "");
+
+      // Buildable box updates with current setbacks and lot size
+      const buildLeftFt = lot.sideSetFt;
+      const buildTopFt = lot.frontSetFt;
+      const buildWidthFt = Math.max(lot.widthFt - 2 * lot.sideSetFt, 5);
+      const buildHeightFt = Math.max(
+        lot.depthFt - lot.frontSetFt - lot.rearSetFt,
+        5
+      );
+
+      buildableRect.setAttribute("x", ftToPxX(buildLeftFt));
+      buildableRect.setAttribute("y", ftToPxY(buildTopFt));
+      buildableRect.setAttribute("width", buildWidthFt * scale);
+      buildableRect.setAttribute("height", buildHeightFt * scale);
+
+      buildableLabel.setAttribute("x", ftToPxX(buildLeftFt) + 6);
+      buildableLabel.setAttribute("y", ftToPxY(buildTopFt) + 16);
+
+      // Lot handles
+      lotHandleRight.setAttribute(
+        "cx",
+        lotLeftPx + lot.widthFt * scale
+      );
+      lotHandleRight.setAttribute(
+        "cy",
+        lotTopPx + (lot.depthFt * scale) / 2
+      );
+      lotHandleBottom.setAttribute(
+        "cx",
+        lotLeftPx + (lot.widthFt * scale) / 2
+      );
+      lotHandleBottom.setAttribute(
+        "cy",
+        lotTopPx + lot.depthFt * scale
+      );
+
+      // Home rect + label
+      const hx = ftToPxX(home.xFt);
+      const hy = ftToPxY(home.yFt);
+      const hw = home.widthFt * scale;
+      const hh = home.depthFt * scale;
+
+      homeRect.setAttribute("x", hx);
+      homeRect.setAttribute("y", hy);
+      homeRect.setAttribute("width", hw);
+      homeRect.setAttribute("height", hh);
+
+      const homeArea = Math.round(home.widthFt * home.depthFt);
+      homeLabel.textContent = `Existing home (${homeArea.toLocaleString()} sf)`;
+      homeLabel.setAttribute("x", hx + 8);
+      homeLabel.setAttribute("y", hy + 16);
+
+      const homeHandles = svg.querySelectorAll(
+        '.resize-handle[data-shape="home"]'
+      );
+      homeHandles.forEach((h) => {
+        const corner = h.getAttribute("data-corner");
+        let cx = hx;
+        let cy = hy;
+        if (corner.includes("r")) cx = hx + hw;
+        if (corner.includes("b")) cy = hy + hh;
+        h.setAttribute("cx", cx);
+        h.setAttribute("cy", cy);
+      });
+
+      // ADU rect + label
+      const ax = ftToPxX(adu.xFt);
+      const ay = ftToPxY(adu.yFt);
+      const aw = adu.widthFt * scale;
+      const ah = adu.depthFt * scale;
+
+      aduRect.setAttribute("x", ax);
+      aduRect.setAttribute("y", ay);
+      aduRect.setAttribute("width", aw);
+      aduRect.setAttribute("height", ah);
+
+      const aduArea = Math.round(adu.widthFt * adu.depthFt);
+      aduLabel.textContent = `ADU (${aduArea.toLocaleString()} sf)`;
+      aduLabel.setAttribute("x", ax + 8);
+      aduLabel.setAttribute("y", ay + 16);
+
+      const aduHandles = svg.querySelectorAll(
+        '.resize-handle[data-shape="adu"]'
+      );
+      aduHandles.forEach((h) => {
+        const corner = h.getAttribute("data-corner");
+        let cx = ax;
+        let cy = ay;
+        if (corner.includes("r")) cx = ax + aw;
+        if (corner.includes("b")) cy = ay + ah;
+        h.setAttribute("cx", cx);
+        h.setAttribute("cy", cy);
+      });
+
+      // Sync back to inputs (width, depth, lot size)
+      const widthInput = document.getElementById("feasLotWidth");
+      const depthInput = document.getElementById("feasLotDepth");
+      const sizeInput = document.getElementById("feasLotSize");
+      if (widthInput) widthInput.value = Math.round(lot.widthFt);
+      if (depthInput) depthInput.value = Math.round(lot.depthFt);
+      if (sizeInput) sizeInput.value = lotArea;
+    }
+
+    redrawAll();
+
+    // ----- SHAPE DRAGGING -----
+    function startDragShape(evt, shapeName) {
+      const shape = FEAS_DIAGRAM_STATE[shapeName];
+      const pt = svg.createSVGPoint();
+      pt.x = evt.clientX;
+      pt.y = evt.clientY;
+      const svgPt = pt.matrixTransform(svg.getScreenCTM().inverse());
+      const offsetXFt = pxToFtX(svgPt.x) - shape.xFt;
+      const offsetYFt = pxToFtY(svgPt.y) - shape.yFt;
+      FEAS_DIAGRAM_STATE.dragging = { shape: shapeName, offsetXFt, offsetYFt };
+    }
+
+    homeGroup.addEventListener("mousedown", (e) => {
+      if (e.target.classList.contains("resize-handle")) return;
+      startDragShape(e, "home");
+    });
+
+    aduGroup.addEventListener("mousedown", (e) => {
+      if (e.target.classList.contains("resize-handle")) return;
+      startDragShape(e, "adu");
+    });
+
+    // ----- SHAPE RESIZING -----
+    function startResize(evt, shapeName, corner) {
+      FEAS_DIAGRAM_STATE.resizing = { shape: shapeName, corner };
+      evt.stopPropagation();
+    }
+
+    handles.forEach((h) => {
+      h.addEventListener("mousedown", (e) => {
+        const shapeName = h.getAttribute("data-shape");
+        const corner = h.getAttribute("data-corner");
+        startResize(e, shapeName, corner);
+      });
+    });
+
+    // ----- LOT EDGE RESIZING -----
+    lotHandleRight.addEventListener("mousedown", (e) => {
+      FEAS_DIAGRAM_STATE.lotResize = { edge: "right" };
+      e.stopPropagation();
+    });
+
+    lotHandleBottom.addEventListener("mousedown", (e) => {
+      FEAS_DIAGRAM_STATE.lotResize = { edge: "bottom" };
+      e.stopPropagation();
+    });
+
+    // ----- GLOBAL MOUSE HANDLERS (ONCE) -----
+    if (!FEAS_DIAGRAM_STATE._mouseHandlersAttached) {
+      FEAS_DIAGRAM_STATE._mouseHandlersAttached = true;
+
+      window.addEventListener("mousemove", (evt) => {
+        const svg = FEAS_DIAGRAM_STATE.svg;
+        if (!svg) return;
+
+        const pt = svg.createSVGPoint();
+        pt.x = evt.clientX;
+        pt.y = evt.clientY;
+        const svgPt = pt.matrixTransform(svg.getScreenCTM().inverse());
+        const lot = FEAS_DIAGRAM_STATE.lot;
+        const scale = FEAS_DIAGRAM_STATE.scale;
+
+        // Dragging shapes
+        if (FEAS_DIAGRAM_STATE.dragging) {
+          const drag = FEAS_DIAGRAM_STATE.dragging;
+          const shape = FEAS_DIAGRAM_STATE[drag.shape];
+          const newXFt = pxToFtX(svgPt.x) - drag.offsetXFt;
+          const newYFt = pxToFtY(svgPt.y) - drag.offsetYFt;
+          shape.xFt = newXFt;
+          shape.yFt = newYFt;
+          redrawAll();
+          return;
+        }
+
+        // Resizing shapes
+        if (FEAS_DIAGRAM_STATE.resizing) {
+          const rs = FEAS_DIAGRAM_STATE.resizing;
+          const shape = FEAS_DIAGRAM_STATE[rs.shape];
+
+          const lotXFt = pxToFtX(svgPt.x);
+          const lotYFt = pxToFtY(svgPt.y);
+          const minSizeFt = 5;
+
+          if (rs.corner === "tl") {
+            const newRightFt = shape.xFt + shape.widthFt;
+            let newXFt = Math.min(lotXFt, newRightFt - minSizeFt);
+            newXFt = Math.max(0, newXFt);
+            shape.widthFt = newRightFt - newXFt;
+            shape.xFt = newXFt;
+          } else if (rs.corner === "tr") {
+            const newWidthFt = Math.max(minSizeFt, lotXFt - shape.xFt);
+            shape.widthFt = Math.min(newWidthFt, lot.widthFt - shape.xFt);
+          } else if (rs.corner === "bl") {
+            const newBottomFt = shape.yFt + shape.depthFt;
+            let newYFt = Math.min(lotYFt, newBottomFt - minSizeFt);
+            newYFt = Math.max(0, newYFt);
+            shape.depthFt = newBottomFt - newYFt;
+            shape.yFt = newYFt;
+          } else if (rs.corner === "br") {
+            const newDepthFt = Math.max(minSizeFt, lotYFt - shape.yFt);
+            shape.depthFt = Math.min(newDepthFt, lot.depthFt - shape.yFt);
+          }
+
+          redrawAll();
+          return;
+        }
+
+        // Resizing lot edges
+        if (FEAS_DIAGRAM_STATE.lotResize) {
+          const lr = FEAS_DIAGRAM_STATE.lotResize;
+          if (lr.edge === "right") {
+            let newWidthFt = (svgPt.x - lotLeftPx) / scale;
+            newWidthFt = Math.max(20, Math.min(lot.maxFt, newWidthFt));
+            lot.widthFt = newWidthFt;
+          } else if (lr.edge === "bottom") {
+            let newDepthFt = (svgPt.y - lotTopPx) / scale;
+            newDepthFt = Math.max(20, Math.min(lot.maxFt, newDepthFt));
+            lot.depthFt = newDepthFt;
+          }
+          redrawAll();
+        }
+      });
+
+      window.addEventListener("mouseup", () => {
+        FEAS_DIAGRAM_STATE.dragging = null;
+        FEAS_DIAGRAM_STATE.resizing = null;
+        FEAS_DIAGRAM_STATE.lotResize = null;
+      });
+    }
   }
 }
 
