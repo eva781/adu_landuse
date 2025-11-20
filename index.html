@@ -89,17 +89,26 @@
 <section class="card map-card">
   <h2>King County Parcel Viewer</h2>
   <p class="section-help">
-    Use the official King County Parcel Viewer to look up parcels, zoning, and assessor reports.
-    Search by address or parcel number, then cross-check zoning against the ADU data on this site.
+    Use the official King County Parcel Viewer to look up parcels, zoning, and assessor data.
+    Then plug those details into the ADU feasibility checker on this page.
   </p>
 
-  <div class="parcel-viewer-wrapper">
-    <iframe
-      src="https://gismaps.kingcounty.gov/parcelviewer2/"
-      title="King County Parcel Viewer"
-      loading="lazy"
-      referrerpolicy="no-referrer-when-downgrade"
-    ></iframe>
+  <div class="parcel-card">
+    <div class="parcel-card-main">
+      <button
+        class="btn-primary parcel-btn"
+        onclick="window.open('https://gismaps.kingcounty.gov/parcelviewer2/', '_blank')"
+      >
+        Open King County Parcel Viewer
+      </button>
+
+      <ul class="parcel-howto">
+        <li>Search by address or parcel number.</li>
+        <li>Note the zoning designation and parcel area (sq ft).</li>
+        <li>Enter the city, zone, and lot size into the “Lot-level feasibility” tool.</li>
+        <li>Use the code link in the table below to verify specific standards.</li>
+      </ul>
+    </div>
   </div>
 </section>
 
