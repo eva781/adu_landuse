@@ -107,6 +107,56 @@
       <div id="map"></div>
     </section>
 
+    <!-- Feasibility checker -->
+    <section class="card feasibility-card">
+      <h2>Lot-level feasibility check</h2>
+      <p class="section-help">
+        Enter a city, zone, and lot to get a quick read on whether an ADU or DADU is feasible under your current dataset
+        &mdash; including size caps, lot minimums, and likely parking expectations. This is informational only, not a zoning decision.
+      </p>
+
+      <div class="feasibility-grid">
+        <label>
+          <span>City</span>
+          <select id="feasCity"></select>
+        </label>
+
+        <label>
+          <span>Zone</span>
+          <select id="feasZone"></select>
+        </label>
+
+        <label>
+          <span>Lot size (sq ft)</span>
+          <input id="feasLotSize" type="number" min="0" placeholder="e.g. 5000" />
+        </label>
+
+        <label>
+          <span>Target ADU size (sq ft)</span>
+          <input id="feasADUSize" type="number" min="0" placeholder="e.g. 800" />
+        </label>
+
+        <label class="checkbox-label">
+          <input id="feasTransit" type="checkbox" />
+          <span>Within ~0.5 mi of frequent transit</span>
+        </label>
+
+        <label class="checkbox-label">
+          <input id="feasAlley" type="checkbox" />
+          <span>Alley access to rear yard</span>
+        </label>
+      </div>
+
+      <div class="feasibility-actions">
+        <button id="runFeasibility" class="btn-primary">Check feasibility</button>
+        <p id="feasibilitySummary" class="summary-text"></p>
+      </div>
+
+      <div id="feasibilityDetails" class="feasibility-details">
+        <!-- Filled by app.js -->
+      </div>
+    </section>
+
     <!-- ADU activity feed -->
     <section class="card permits-card">
       <h2>Recent ADU Permits</h2>
@@ -137,9 +187,7 @@
         </button>
       </div>
 
-      <div id="permitsList" class="permits-list">
-        <!-- populated by app.js -->
-      </div>
+      <div id="permitsList" class="permits-list"></div>
       <p id="permitsSummary" class="summary-text"></p>
     </section>
 
