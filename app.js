@@ -880,9 +880,9 @@ function renderPermits() {
 // Global-ish state for the interactive feasibility diagram
 const FEAS_DIAGRAM_STATE = {
   scale: 1,
-  drawWidthPx: 900,
-  drawHeightPx: 500,
-  marginPx: 40,
+  drawWidthPx: 600,
+  drawHeightPx: 320,
+  marginPx: 24,
   lot: {
     widthFt: 40,
     depthFt: 100,
@@ -1269,30 +1269,37 @@ function initFeasibility() {
     const diagramEl = document.getElementById("feasDiagram");
     if (!diagramEl) return;
 
-    // ----- LOT & SCALE SETUP (IN FEET) -----
-    const lotWidthFt = lotWidthInput && lotWidthInput > 0 ? lotWidthInput : 40;
-    const lotDepthFt = lotDepthInput && lotDepthInput > 0 ? lotDepthInput : 100;
+// ----- LOT & SCALE SETUP (IN FEET) -----
+const lotWidthFt = lotWidthInput && lotWidthInput > 0 ? lotWidthInput : 40;
+const lotDepthFt = lotDepthInput && lotDepthInput > 0 ? lotDepthInput : 100;
 
-    const frontSetFt = toNumber(get(row, COL.frontSetback)) ?? 20;
-    const sideSetFt = toNumber(get(row, COL.sideSetback)) ?? 5;
-    const rearSetFt = toNumber(get(row, COL.rearSetback)) ?? 25;
+const frontSetFt = toNumber(get(row, COL.frontSetback)) ?? 20;
+const sideSetFt = toNumber(get(row, COL.sideSetback)) ?? 5;
+const rearSetFt = toNumber(get(row, COL.rearSetback)) ?? 25;
 
-    FEAS_DIAGRAM_STATE.lot.widthFt = lotWidthFt;
-    FEAS_DIAGRAM_STATE.lot.depthFt = lotDepthFt;
-    FEAS_DIAGRAM_STATE.lot.frontSetFt = frontSetFt;
-    FEAS_DIAGRAM_STATE.lot.sideSetFt = sideSetFt;
-    FEAS_DIAGRAM_STATE.lot.rearSetFt = rearSetFt;
+FEAS_DIAGRAM_STATE.lot.widthFt = lotWidthFt;
+FEAS_DIAGRAM_STATE.lot.depthFt = lotDepthFt;
+FEAS_DIAGRAM_STATE.lot.frontSetFt = frontSetFt;
+FEAS_DIAGRAM_STATE.lot.sideSetFt = sideSetFt;
+FEAS_DIAGRAM_STATE.lot.rearSetFt = rearSetFt;
 
-    // allow some headroom so user can drag lot a bit larger
-    const maxFt = Math.max(lotWidthFt, lotDepthFt, 200);
-    FEAS_DIAGRAM_STATE.lot.maxFt = maxFt;
+// Max dimension we allow user to drag to (in feet)
+FEAS_DIAGRAM_STATE.lot.maxFt = 200;
 
-    const marginPx = FEAS_DIAGRAM_STATE.marginPx;
-    const drawWidthPx = FEAS_DIAGRAM_STATE.drawWidthPx;
-    const drawHeightPx = FEAS_DIAGRAM_STATE.drawHeightPx;
+const marginPx = FEAS_DIAGRAM_STATE.marginPx;
+const drawWidthPx = FEAS_DIAGRAM_STATE.drawWidthPx;
+const drawHeightPx = FEAS_DIAGRAM_STATE.drawHeightPx;
 
-    const scale = (drawWidthPx - 2 * marginPx) / maxFt;
-    FEAS_DIAGRAM_STATE.scale = scale;
+// Scale so the *actual* lot width/depth fills the box nicely
+const maxPixelWidth = drawWidthPx - 2 * marginPx;
+const maxPixelHeight = drawHeightPx - 2 * marginPx;
+
+const scaleX = maxPixelWidth / lotWidthFt;
+const scaleY = maxPixelHeight / lotDepthFt;
+const scale = Math.min(scaleX, scaleY);  // preserve aspect ratio
+
+FEAS_DIAGRAM_STATE.scale = scale;
+
 
     // funcs: feet <-> px in lot coordinates
     const lotLeftPx = marginPx;
