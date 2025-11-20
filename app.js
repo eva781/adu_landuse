@@ -881,13 +881,26 @@ function renderPermits() {
 function initFeasibility() {
   const citySel = document.getElementById("feasCity");
   const zoneSel = document.getElementById("feasZone");
-  const lotInput = document.getElementById("feasLotSize");
+  const lotSizeInput = document.getElementById("feasLotSize");
+  const lotWidthInput = document.getElementById("feasLotWidth");
+  const lotDepthInput = document.getElementById("feasLotDepth");
+  const houseWidthInput = document.getElementById("feasHouseWidth");
+  const houseDepthInput = document.getElementById("feasHouseDepth");
   const aduInput = document.getElementById("feasADUSize");
   const transitCb = document.getElementById("feasTransit");
   const alleyCb = document.getElementById("feasAlley");
   const runBtn = document.getElementById("runFeasibility");
 
-  if (!citySel || !zoneSel || !lotInput || !aduInput || !runBtn) return;
+  if (
+    !citySel ||
+    !zoneSel ||
+    !lotSizeInput ||
+    !aduInput ||
+    !transitCb ||
+    !alleyCb ||
+    !runBtn
+  )
+    return;
 
   // Fill city options
   citySel.innerHTML = "";
@@ -929,6 +942,38 @@ function initFeasibility() {
         zoneSel.appendChild(opt);
       });
   }
+
+  citySel.addEventListener("change", () => {
+    fillZonesForCity(citySel.value || "");
+  });
+
+  runBtn.addEventListener("click", () => {
+    const city = citySel.value || "";
+    const zone = zoneSel.value || "";
+    const lotSize = toNumber(lotSizeInput.value);
+    const lotWidth = toNumber(lotWidthInput.value);
+    const lotDepth = toNumber(lotDepthInput.value);
+    const houseWidth = toNumber(houseWidthInput.value);
+    const houseDepth = toNumber(houseDepthInput.value);
+    const aduSize = toNumber(aduInput.value);
+    const nearTransit = !!transitCb.checked;
+    const hasAlley = !!alleyCb.checked;
+
+    runFeasibilityCheck(
+      city,
+      zone,
+      lotSize,
+      aduSize,
+      nearTransit,
+      hasAlley,
+      lotWidth,
+      lotDepth,
+      houseWidth,
+      houseDepth
+    );
+  });
+}
+
 
   citySel.addEventListener("change", () => {
     fillZonesForCity(citySel.value || "");
