@@ -95,6 +95,33 @@ body {
   grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
 }
+.parcel-card {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: #f9fbff;
+  padding: 0.7rem 0.8rem;
+}
+
+.parcel-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.parcel-btn {
+  align-self: flex-start;
+}
+
+.parcel-howto {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.parcel-howto li {
+  margin-bottom: 0.2rem;
+}
 
 .parcel-viewer-wrapper {
   width: 100%;
