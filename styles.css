@@ -439,7 +439,7 @@ button {
   align-items: stretch;
 }
 #feasDiagram {
-  height: 260px;      /* or 280px if you want taller */
+  height: 240px;      /* or 280px if you want taller */
   max-height: 260px;
   width: 100%;
   overflow: hidden;
@@ -462,6 +462,7 @@ button {
 .resize-handle,
 .lot-handle {
   pointer-events: all;
+   cursor: pointer;
 }
 
 .shape-group rect {
