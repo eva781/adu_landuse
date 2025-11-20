@@ -438,6 +438,21 @@ button {
   gap: 0.7rem;
   align-items: stretch;
 }
+#feasDiagram svg {
+  user-select: none;
+  cursor: default;
+}
+
+.shape-group rect {
+  cursor: move;
+}
+
+.resize-handle {
+  cursor: nwse-resize;
+  stroke: #111827;
+  stroke-width: 1;
+}
+
 
 @media (max-width: 799px) {
   .feasibility-layout {
