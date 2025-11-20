@@ -1210,6 +1210,144 @@ function runFeasibilityCheck(
   });
 }
 
+function drawFeasDiagram(
+  row,
+  lotSize,
+  lotWidthInput,
+  lotDepthInput,
+  houseWidthInput,
+  houseDepthInput,
+  aduSize
+) {
+  const diagramEl = document.getElementById("feasDiagram");
+  if (!diagramEl) return;
+
+  // Derive lot width/depth if missing
+  let lotWidth = lotWidthInput;
+  let lotDepth = lotDepthInput;
+
+  if (!lotWidth && !lotDepth && lotSize) {
+    const side = Math.sqrt(lotSize);
+    lotWidth = side;
+    lotDepth = side;
+  } else if (!lotWidth && lotDepth && lotSize) {
+    lotWidth = lotSize / lotDepth;
+  } else if (lotWidth && !lotDepth && lotSize) {
+    lotDepth = lotSize / lotWidth;
+  }
+
+  if (!lotWidth) lotWidth = 40;
+  if (!lotDepth) lotDepth = 100;
+
+  const frontSet = toNumber(get(row, COL.frontSetback)) || 0;
+  const sideSet = toNumber(get(row, COL.sideSetback)) || 0;
+  const rearSet = toNumber(get(row, COL.rearSetback)) || 0;
+  const coveragePct = toNumber(get(row, COL.lotCoverage));
+
+  const buildableWidth = Math.max(lotWidth - 2 * sideSet, lotWidth * 0.4);
+  const buildableDepth = Math.max(
+    lotDepth - frontSet - rearSet,
+    lotDepth * 0.4
+  );
+
+  const buildableArea = buildableWidth * buildableDepth;
+
+  // Primary home footprint (front part of buildable area)
+  let houseWidth = houseWidthInput;
+  let houseDepth = houseDepthInput;
+
+  if (!houseWidth || !houseDepth) {
+    // default to front ~40% of lot width/depth
+    houseWidth = lotWidth * 0.6;
+    houseDepth = lotDepth * 0.35;
+  }
+
+  // ADU footprint, based on size & coverage
+  let footprintArea = aduSize || null;
+  if (coveragePct != null && lotSize) {
+    const maxFromCoverage = (coveragePct / 100) * lotSize;
+    if (footprintArea != null) {
+      footprintArea = Math.min(footprintArea, maxFromCoverage);
+    } else {
+      footprintArea = maxFromCoverage * 0.4;
+    }
+  } else if (!footprintArea && buildableArea) {
+    footprintArea = buildableArea * 0.2;
+  }
+
+  const buildableWidthPct = Math.max(
+    15,
+    Math.min(100, (buildableWidth / lotWidth) * 100)
+  );
+  const buildableHeightPct = Math.max(
+    15,
+    Math.min(100, (buildableDepth / lotDepth) * 100)
+  );
+
+  // Represent house & ADU footprints as percentages of buildable box
+  let houseWidthFactor = Math.max(
+    0.2,
+    Math.min(0.9, (houseWidth / buildableWidth) || 0.5)
+  );
+  let houseDepthFactor = Math.max(
+    0.2,
+    Math.min(0.7, (houseDepth / buildableDepth) || 0.4)
+  );
+
+  let aduFactor = 0.4;
+  if (footprintArea && buildableArea > 0) {
+    const ratio = footprintArea / buildableArea;
+    aduFactor = Math.max(0.2, Math.min(0.8, Math.sqrt(ratio)));
+  }
+
+  const houseWidthPct = houseWidthFactor * 100;
+  const houseHeightPct = houseDepthFactor * 100;
+  const aduWidthPct = aduFactor * 100;
+  const aduHeightPct = aduFactor * 100;
+
+  // Positions:
+  // - Buildable box is centered
+  // - House sits toward the front
+  // - ADU sits toward the rear, roughly centered horizontally
+
+  const buildableTop = (100 - buildableHeightPct) / 2;
+  const buildableLeft = (100 - buildableWidthPct) / 2;
+
+  const houseTop = buildableTop + 4; // front-ish
+  const houseLeft =
+    buildableLeft + (buildableWidthPct - houseWidthPct) * 0.1;
+
+  const aduTop =
+    buildableTop + buildableHeightPct - aduHeightPct - 4; // rear-ish
+  const aduLeft =
+    buildableLeft + (buildableWidthPct - aduWidthPct) * 0.5;
+
+  diagramEl.innerHTML = `
+    <div class="lot-box">
+      <div class="lot-label">Lot${lotSize ? " (" + lotSize.toLocaleString() + " sf)" : ""}</div>
+      <div
+        class="buildable-box"
+        style="top:${buildableTop}%;left:${buildableLeft}%;width:${buildableWidthPct}%;height:${buildableHeightPct}%;"
+      >
+        <div class="buildable-label">Buildable area</div>
+
+        <div
+          class="primary-box"
+          style="top:${houseTop - buildableTop}%;left:${houseLeft - buildableLeft}%;width:${houseWidthPct}%;height:${houseHeightPct}%;"
+        >
+          <span class="primary-label">Existing home</span>
+        </div>
+
+        <div
+          class="adu-box"
+          style="top:${aduTop - buildableTop}%;left:${aduLeft - buildableLeft}%;width:${aduWidthPct}%;height:${aduHeightPct}%;"
+        >
+          <span class="adu-label">ADU</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
 
   citySel.addEventListener("change", () => {
     fillZonesForCity(citySel.value || "");
