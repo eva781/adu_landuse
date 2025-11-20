@@ -1291,7 +1291,6 @@ async function initApp() {
     renderCityScorecards();
     initFilters();
     applyFilters();
-    initMap();
     initCompareModal();
     initFeasibility();
 
