@@ -877,12 +877,11 @@ function renderPermits() {
 // FEASIBILITY CHECKER (INTERACTIVE DIAGRAM)
 // =========================================
 
-// Global-ish state for the interactive feasibility diagram
 const FEAS_DIAGRAM_STATE = {
   scale: 1,
-  drawWidthPx: 600,
-  drawHeightPx: 320,
-  marginPx: 24,
+  drawWidthPx: 450,   // smaller canvas so it fits
+  drawHeightPx: 260,
+  marginPx: 16,
   lot: {
     widthFt: 40,
     depthFt: 100,
@@ -1206,7 +1205,6 @@ function initFeasibility() {
       bulletPoints.push(`Height limits: ${hh.join(", ")}.`);
     }
 
-    // Owner occupancy & fees
     if (ownerOcc) {
       bulletPoints.push(`Owner-occupancy: ${ownerOcc}.`);
     }
@@ -1242,7 +1240,6 @@ function initFeasibility() {
     detailsEl.appendChild(ul);
     detailsEl.appendChild(disclaimer);
 
-    // Draw / update the interactive diagram
     drawFeasDiagram(
       row,
       lotSize,
@@ -1269,41 +1266,35 @@ function initFeasibility() {
     const diagramEl = document.getElementById("feasDiagram");
     if (!diagramEl) return;
 
-// ----- LOT & SCALE SETUP (IN FEET) -----
-const lotWidthFt = lotWidthInput && lotWidthInput > 0 ? lotWidthInput : 40;
-const lotDepthFt = lotDepthInput && lotDepthInput > 0 ? lotDepthInput : 100;
+    // ----- LOT & SCALE SETUP (IN FEET) -----
+    const lotWidthFt = lotWidthInput && lotWidthInput > 0 ? lotWidthInput : 40;
+    const lotDepthFt = lotDepthInput && lotDepthInput > 0 ? lotDepthInput : 100;
 
-const frontSetFt = toNumber(get(row, COL.frontSetback)) ?? 20;
-const sideSetFt = toNumber(get(row, COL.sideSetback)) ?? 5;
-const rearSetFt = toNumber(get(row, COL.rearSetback)) ?? 25;
+    const frontSetFt = toNumber(get(row, COL.frontSetback)) ?? 20;
+    const sideSetFt = toNumber(get(row, COL.sideSetback)) ?? 5;
+    const rearSetFt = toNumber(get(row, COL.rearSetback)) ?? 25;
 
-FEAS_DIAGRAM_STATE.lot.widthFt = lotWidthFt;
-FEAS_DIAGRAM_STATE.lot.depthFt = lotDepthFt;
-FEAS_DIAGRAM_STATE.lot.frontSetFt = frontSetFt;
-FEAS_DIAGRAM_STATE.lot.sideSetFt = sideSetFt;
-FEAS_DIAGRAM_STATE.lot.rearSetFt = rearSetFt;
+    FEAS_DIAGRAM_STATE.lot.widthFt = lotWidthFt;
+    FEAS_DIAGRAM_STATE.lot.depthFt = lotDepthFt;
+    FEAS_DIAGRAM_STATE.lot.frontSetFt = frontSetFt;
+    FEAS_DIAGRAM_STATE.lot.sideSetFt = sideSetFt;
+    FEAS_DIAGRAM_STATE.lot.rearSetFt = rearSetFt;
+    FEAS_DIAGRAM_STATE.lot.maxFt = 200;
 
-// Max dimension we allow user to drag to (in feet)
-FEAS_DIAGRAM_STATE.lot.maxFt = 200;
+    const marginPx = FEAS_DIAGRAM_STATE.marginPx;
+    const drawWidthPx = FEAS_DIAGRAM_STATE.drawWidthPx;
+    const drawHeightPx = FEAS_DIAGRAM_STATE.drawHeightPx;
 
-const marginPx = FEAS_DIAGRAM_STATE.marginPx;
-const drawWidthPx = FEAS_DIAGRAM_STATE.drawWidthPx;
-const drawHeightPx = FEAS_DIAGRAM_STATE.drawHeightPx;
+    // Scale to fill height nicely (lot depth controls overall scale)
+    const maxPixelHeight = drawHeightPx - 2 * marginPx;
+    const scale = maxPixelHeight / lotDepthFt;
+    FEAS_DIAGRAM_STATE.scale = scale;
 
-// Scale so the *actual* lot width/depth fills the box nicely
-const maxPixelWidth = drawWidthPx - 2 * marginPx;
-const maxPixelHeight = drawHeightPx - 2 * marginPx;
-
-const scaleX = maxPixelWidth / lotWidthFt;
-const scaleY = maxPixelHeight / lotDepthFt;
-const scale = Math.min(scaleX, scaleY);  // preserve aspect ratio
-
-FEAS_DIAGRAM_STATE.scale = scale;
-
-
-    // funcs: feet <-> px in lot coordinates
-    const lotLeftPx = marginPx;
+    const lotPixelHeight = lotDepthFt * scale;
+    const lotPixelWidth = lotWidthFt * scale;
+    const lotLeftPx = (drawWidthPx - lotPixelWidth) / 2;
     const lotTopPx = marginPx;
+
     const ftToPxX = (ft) => lotLeftPx + ft * scale;
     const ftToPxY = (ft) => lotTopPx + ft * scale;
     const pxToFtX = (px) => (px - lotLeftPx) / scale;
@@ -1313,18 +1304,18 @@ FEAS_DIAGRAM_STATE.scale = scale;
     const buildableLeftFt = sideSetFt;
     const buildableTopFt = frontSetFt;
     const buildableWidthFt = Math.max(
-      FEAS_DIAGRAM_STATE.lot.widthFt - 2 * sideSetFt,
+      lotWidthFt - 2 * sideSetFt,
       5
     );
     const buildableHeightFt = Math.max(
-      FEAS_DIAGRAM_STATE.lot.depthFt - frontSetFt - rearSetFt,
+      lotDepthFt - frontSetFt - rearSetFt,
       5
     );
 
-    // ----- INITIAL HOME & ADU IF NOT ALREADY CREATED -----
+    // ----- INITIAL HOME & ADU IF NEEDED -----
     if (!FEAS_DIAGRAM_STATE.home || !FEAS_DIAGRAM_STATE.adu) {
-      const defaultHomeWidthFt = FEAS_DIAGRAM_STATE.lot.widthFt * 0.6;
-      const defaultHomeDepthFt = FEAS_DIAGRAM_STATE.lot.depthFt * 0.35;
+      const defaultHomeWidthFt = lotWidthFt * 0.6;
+      const defaultHomeDepthFt = lotDepthFt * 0.35;
 
       const homeWidthFt =
         houseWidthInput && houseWidthInput > 0
@@ -1379,8 +1370,8 @@ FEAS_DIAGRAM_STATE.scale = scale;
         <!-- Lot outline -->
         <rect id="lotRect"
               x="${lotLeftPx}" y="${lotTopPx}"
-              width="${FEAS_DIAGRAM_STATE.lot.widthFt * scale}"
-              height="${FEAS_DIAGRAM_STATE.lot.depthFt * scale}"
+              width="${lotPixelWidth}"
+              height="${lotPixelHeight}"
               fill="#f9fafb" stroke="#9ca3af" stroke-width="2" rx="10" ry="10" />
         <text id="lotLabel"
               x="${lotLeftPx + 8}" y="${lotTopPx + 16}"
@@ -1404,16 +1395,16 @@ FEAS_DIAGRAM_STATE.scale = scale;
           Buildable area (setbacks)
         </text>
 
-        <!-- Lot edge handles (right & bottom) -->
+        <!-- Lot edge handles -->
         <circle id="lotHandleRight"
                 class="lot-handle"
-                cx="${lotLeftPx + FEAS_DIAGRAM_STATE.lot.widthFt * scale}"
-                cy="${lotTopPx + (FEAS_DIAGRAM_STATE.lot.depthFt * scale) / 2}"
+                cx="${lotLeftPx + lotPixelWidth}"
+                cy="${lotTopPx + lotPixelHeight / 2}"
                 r="6" fill="#10b981" stroke="#064e3b" stroke-width="1.5" />
         <circle id="lotHandleBottom"
                 class="lot-handle"
-                cx="${lotLeftPx + (FEAS_DIAGRAM_STATE.lot.widthFt * scale) / 2}"
-                cy="${lotTopPx + FEAS_DIAGRAM_STATE.lot.depthFt * scale}"
+                cx="${lotLeftPx + lotPixelWidth / 2}"
+                cy="${lotTopPx + lotPixelHeight}"
                 r="6" fill="#10b981" stroke="#064e3b" stroke-width="1.5" />
 
         <!-- Existing home group -->
@@ -1436,7 +1427,7 @@ FEAS_DIAGRAM_STATE.scale = scale;
           <circle class="resize-handle" data-shape="adu" data-corner="br" r="5" fill="#f97316" />
         </g>
 
-        <text x="${lotLeftPx + (FEAS_DIAGRAM_STATE.lot.widthFt * scale) / 2}"
+        <text x="${drawWidthPx / 2}"
               y="${lotTopPx - 6}"
               text-anchor="middle" font-size="11" fill="#6b7280">
           Street / front of lot
@@ -1461,14 +1452,12 @@ FEAS_DIAGRAM_STATE.scale = scale;
     const aduGroup = document.getElementById("aduGroup");
     const handles = svg.querySelectorAll(".resize-handle");
 
-    // Clamp a shape inside current lot bounds
     function clampShape(shape) {
       const lot = FEAS_DIAGRAM_STATE.lot;
       shape.xFt = Math.max(0, Math.min(lot.widthFt - shape.widthFt, shape.xFt));
       shape.yFt = Math.max(0, Math.min(lot.depthFt - shape.depthFt, shape.yFt));
     }
 
-    // Redraw everything from FEAS_DIAGRAM_STATE
     function redrawAll() {
       const lot = FEAS_DIAGRAM_STATE.lot;
       const home = FEAS_DIAGRAM_STATE.home;
@@ -1478,52 +1467,42 @@ FEAS_DIAGRAM_STATE.scale = scale;
       clampShape(home);
       clampShape(adu);
 
-      // Lot rect
+      const lotWpx = lot.widthFt * scale;
+      const lotHpx = lot.depthFt * scale;
+
       lotRect.setAttribute("x", lotLeftPx);
       lotRect.setAttribute("y", lotTopPx);
-      lotRect.setAttribute("width", lot.widthFt * scale);
-      lotRect.setAttribute("height", lot.depthFt * scale);
+      lotRect.setAttribute("width", lotWpx);
+      lotRect.setAttribute("height", lotHpx);
 
       const lotArea = Math.round(lot.widthFt * lot.depthFt);
       lotLabelEl.textContent =
         "Lot" + (lotArea ? ` (${lotArea.toLocaleString()} sf)` : "");
 
-      // Buildable box updates with current setbacks and lot size
-      const buildLeftFt = lot.sideSetFt;
-      const buildTopFt = lot.frontSetFt;
-      const buildWidthFt = Math.max(lot.widthFt - 2 * lot.sideSetFt, 5);
-      const buildHeightFt = Math.max(
+      // Update buildable box
+      const bLeftFt = lot.sideSetFt;
+      const bTopFt = lot.frontSetFt;
+      const bWidthFt = Math.max(lot.widthFt - 2 * lot.sideSetFt, 5);
+      const bHeightFt = Math.max(
         lot.depthFt - lot.frontSetFt - lot.rearSetFt,
         5
       );
 
-      buildableRect.setAttribute("x", ftToPxX(buildLeftFt));
-      buildableRect.setAttribute("y", ftToPxY(buildTopFt));
-      buildableRect.setAttribute("width", buildWidthFt * scale);
-      buildableRect.setAttribute("height", buildHeightFt * scale);
+      buildableRect.setAttribute("x", ftToPxX(bLeftFt));
+      buildableRect.setAttribute("y", ftToPxY(bTopFt));
+      buildableRect.setAttribute("width", bWidthFt * scale);
+      buildableRect.setAttribute("height", bHeightFt * scale);
 
-      buildableLabel.setAttribute("x", ftToPxX(buildLeftFt) + 6);
-      buildableLabel.setAttribute("y", ftToPxY(buildTopFt) + 16);
+      buildableLabel.setAttribute("x", ftToPxX(bLeftFt) + 6);
+      buildableLabel.setAttribute("y", ftToPxY(bTopFt) + 16);
 
       // Lot handles
-      lotHandleRight.setAttribute(
-        "cx",
-        lotLeftPx + lot.widthFt * scale
-      );
-      lotHandleRight.setAttribute(
-        "cy",
-        lotTopPx + (lot.depthFt * scale) / 2
-      );
-      lotHandleBottom.setAttribute(
-        "cx",
-        lotLeftPx + (lot.widthFt * scale) / 2
-      );
-      lotHandleBottom.setAttribute(
-        "cy",
-        lotTopPx + lot.depthFt * scale
-      );
+      lotHandleRight.setAttribute("cx", lotLeftPx + lotWpx);
+      lotHandleRight.setAttribute("cy", lotTopPx + lotHpx / 2);
+      lotHandleBottom.setAttribute("cx", lotLeftPx + lotWpx / 2);
+      lotHandleBottom.setAttribute("cy", lotTopPx + lotHpx);
 
-      // Home rect + label
+      // Home
       const hx = ftToPxX(home.xFt);
       const hy = ftToPxY(home.yFt);
       const hw = home.widthFt * scale;
@@ -1552,7 +1531,7 @@ FEAS_DIAGRAM_STATE.scale = scale;
         h.setAttribute("cy", cy);
       });
 
-      // ADU rect + label
+      // ADU
       const ax = ftToPxX(adu.xFt);
       const ay = ftToPxY(adu.yFt);
       const aw = adu.widthFt * scale;
@@ -1581,7 +1560,7 @@ FEAS_DIAGRAM_STATE.scale = scale;
         h.setAttribute("cy", cy);
       });
 
-      // Sync back to inputs (width, depth, lot size)
+      // Sync back to inputs
       const widthInput = document.getElementById("feasLotWidth");
       const depthInput = document.getElementById("feasLotDepth");
       const sizeInput = document.getElementById("feasLotSize");
@@ -1592,7 +1571,7 @@ FEAS_DIAGRAM_STATE.scale = scale;
 
     redrawAll();
 
-    // ----- SHAPE DRAGGING -----
+    // ---- SHAPE DRAGGING ----
     function startDragShape(evt, shapeName) {
       const shape = FEAS_DIAGRAM_STATE[shapeName];
       const pt = svg.createSVGPoint();
@@ -1614,7 +1593,7 @@ FEAS_DIAGRAM_STATE.scale = scale;
       startDragShape(e, "adu");
     });
 
-    // ----- SHAPE RESIZING -----
+    // ---- SHAPE RESIZING ----
     function startResize(evt, shapeName, corner) {
       FEAS_DIAGRAM_STATE.resizing = { shape: shapeName, corner };
       evt.stopPropagation();
@@ -1628,7 +1607,7 @@ FEAS_DIAGRAM_STATE.scale = scale;
       });
     });
 
-    // ----- LOT EDGE RESIZING -----
+    // ---- LOT EDGE RESIZING ----
     lotHandleRight.addEventListener("mousedown", (e) => {
       FEAS_DIAGRAM_STATE.lotResize = { edge: "right" };
       e.stopPropagation();
@@ -1639,7 +1618,7 @@ FEAS_DIAGRAM_STATE.scale = scale;
       e.stopPropagation();
     });
 
-    // ----- GLOBAL MOUSE HANDLERS (ONCE) -----
+    // ---- GLOBAL MOUSE HANDLERS (run once) ----
     if (!FEAS_DIAGRAM_STATE._mouseHandlersAttached) {
       FEAS_DIAGRAM_STATE._mouseHandlersAttached = true;
 
@@ -1723,6 +1702,7 @@ FEAS_DIAGRAM_STATE.scale = scale;
     }
   }
 }
+
 
 // =========================================
 // CITY COMPARISON MODAL
