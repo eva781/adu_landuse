@@ -89,6 +89,7 @@ body {
     "scorecard"
     "filters"
     "map"
+    "feasibility"
     "permits"
     "table";
   grid-template-columns: minmax(0, 1fr);
@@ -102,13 +103,13 @@ body {
   padding: 0.9rem 1rem;
 }
 
-/* Desktop: scorecard full width, filters + map side by side,
-   permits full width, then table full width */
+/* Desktop layout */
 @media (min-width: 900px) {
   .page-main {
     grid-template-areas:
       "scorecard scorecard"
       "filters map"
+      "feasibility feasibility"
       "permits permits"
       "table table";
     grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.05fr);
@@ -126,6 +127,10 @@ body {
 
 .map-card {
   grid-area: map;
+}
+
+.feasibility-card {
+  grid-area: feasibility;
 }
 
 .permits-card {
@@ -228,13 +233,14 @@ body {
 }
 
 /* =========================================
-   FILTERS
+   SECTION TITLES
    ========================================= */
 
 .filters-card h2,
 .map-card h2,
 .table-card h2,
-.permits-card h2 {
+.permits-card h2,
+.feasibility-card h2 {
   margin: 0 0 0.4rem;
   font-size: 1rem;
 }
@@ -244,6 +250,10 @@ body {
   font-size: 0.85rem;
   color: var(--text-muted);
 }
+
+/* =========================================
+   FILTERS
+   ========================================= */
 
 .filters-grid {
   display: grid;
@@ -369,6 +379,96 @@ button {
 
 .leaflet-container {
   font-family: inherit;
+}
+
+/* =========================================
+   FEASIBILITY
+   ========================================= */
+
+.feasibility-card {
+  padding-top: 0.8rem;
+}
+
+.feasibility-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.5rem 0.7rem;
+  margin-bottom: 0.6rem;
+}
+
+.feasibility-grid label span {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 0.1rem;
+}
+
+.feasibility-grid select,
+.feasibility-grid input[type="number"] {
+  width: 100%;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  padding: 0.35rem 0.55rem;
+  font-size: 0.85rem;
+  background: #f9fafb;
+}
+
+.feasibility-grid select:focus,
+.feasibility-grid input[type="number"]:focus {
+  border-color: var(--bg-accent);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+  background: #ffffff;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--text-main);
+}
+
+.checkbox-label input[type="checkbox"] {
+  accent-color: var(--bg-accent);
+}
+
+.feasibility-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.4rem;
+}
+
+.feasibility-details {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: #f9fbff;
+  padding: 0.6rem 0.7rem;
+  font-size: 0.8rem;
+}
+
+.feasibility-details h3 {
+  margin: 0 0 0.3rem;
+  font-size: 0.9rem;
+}
+
+.feasibility-bad {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.feasibility-good {
+  color: #047857;
+  font-weight: 600;
+}
+
+.feasibility-details ul {
+  margin: 0.2rem 0 0.3rem;
+  padding-left: 1.1rem;
 }
 
 /* =========================================
