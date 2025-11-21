@@ -1407,24 +1407,17 @@ function initFeasibility() {
                 cy="${lotTopPx + lotPixelHeight}"
                 r="6" fill="#10b981" stroke="#064e3b" stroke-width="1.5" />
 
-        <!-- Existing home group -->
-        <g id="homeGroup" class="shape-group" data-shape="home">
-          <rect id="homeRect" fill="#111827" rx="6" ry="6" />
-          <text id="homeLabel" fill="#e5e7eb" font-size="11"></text>
-          <circle class="resize-handle" data-shape="home" data-corner="tl" r="5" fill="#fbbf24" />
-          <circle class="resize-handle" data-shape="home" data-corner="tr" r="5" fill="#fbbf24" />
-          <circle class="resize-handle" data-shape="home" data-corner="bl" r="5" fill="#fbbf24" />
-          <circle class="resize-handle" data-shape="home" data-corner="br" r="5" fill="#fbbf24" />
-        </g>
+   <!-- Existing home group -->
+<g id="homeGroup" class="shape-group" data-shape="home">
+  <rect id="homeRect" fill="#111827" rx="6" ry="6" />
+  <text id="homeLabel" font-size="11"></text>
+  ...
+</g>
 
-        <!-- ADU group -->
-        <g id="aduGroup" class="shape-group" data-shape="adu">
-          <rect id="aduRect" fill="rgba(79,70,229,0.85)" rx="6" ry="6" />
-          <text id="aduLabel" fill="#eef2ff" font-size="11"></text>
-          <circle class="resize-handle" data-shape="adu" data-corner="tl" r="5" fill="#f97316" />
-          <circle class="resize-handle" data-shape="adu" data-corner="tr" r="5" fill="#f97316" />
-          <circle class="resize-handle" data-shape="adu" data-corner="bl" r="5" fill="#f97316" />
-          <circle class="resize-handle" data-shape="adu" data-corner="br" r="5" fill="#f97316" />
+<!-- ADU group -->
+<g id="aduGroup" class="shape-group" data-shape="adu">
+  <rect id="aduRect" fill="rgba(79,70,229,0.85)" rx="6" ry="6" />
+  <text id="aduLabel" font-size="11"></text>
         </g>
 
         <text x="${drawWidthPx / 2}"
