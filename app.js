@@ -1510,6 +1510,8 @@ function initFeasibility() {
       homeLabel.textContent = `Existing home (${homeArea.toLocaleString()} sf)`;
       homeLabel.setAttribute("x", hx + 8);
       homeLabel.setAttribute("y", hy + 16);
+      homeLabel.setAttribute("fill", "#111827");
+
 
       const homeHandles = svg.querySelectorAll(
         '.resize-handle[data-shape="home"]'
@@ -1539,6 +1541,8 @@ function initFeasibility() {
       aduLabel.textContent = `ADU (${aduArea.toLocaleString()} sf)`;
       aduLabel.setAttribute("x", ax + 8);
       aduLabel.setAttribute("y", ay + 16);
+      aduLabel.setAttribute("fill", "#111827");
+
 
       const aduHandles = svg.querySelectorAll(
         '.resize-handle[data-shape="adu"]'
