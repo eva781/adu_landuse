@@ -440,7 +440,7 @@ button {
 }
 #feasDiagram {
   height: 240px;      /* or 280px if you want taller */
-  max-height: 260px;
+  max-height: 240px;
   width: 100%;
   overflow: hidden;
 }
