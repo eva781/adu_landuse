@@ -2,8 +2,8 @@
 // CONFIG & GLOBAL STATE
 // =========================================
 
-const CSV_URL = "data.csv";
-const PERMITS_URL = "adu_permits.csv";
+const CSV_URL = "./data.csv";
+const PERMITS_URL = "./adu_permits.csv";
 
 let headers = [];
 let rawRows = [];
@@ -54,33 +54,17 @@ const COL = {
 // Column map for permits dataset
 const PCOL = {
   city: "City",
-  project: "Project_Name",
-  type: "ADU_Type",
-  status: "Status",
-  permitNumber: "Permit_Number",
-  parcel: "Parcel",
-  zone: "Zone",
-  size: "ADU_Size_Sqft",
-  approvalDate: "Approval_Date",
-  url: "Source_URL",
+  jurisdiction: "Jurisdiction",
+  year: "Year",
+  totalADUs: "Total_ADUs",
+  attached: "Attached_ADUs",
+  detached: "Detached_ADUs",
+  conversion: "Conversion_ADUs",
   notes: "Notes",
 };
 
-// Approximate map coordinates
-const CITY_COORDS = {
-  Bellevue: [47.6101, -122.2015],
-  Seattle: [47.6062, -122.3321],
-  Shoreline: [47.7557, -122.3415],
-  Redmond: [47.673, -122.121],
-  Kirkland: [47.678, -122.207],
-  Bothell: [47.761, -122.205],
-  Renton: [47.4829, -122.2171],
-  Burien: [47.4704, -122.3468],
-  Issaquah: [47.5326, -122.0429],
-};
-
 // =========================================
-// CSV PARSER
+// SIMPLE CSV PARSER
 // =========================================
 
 function parseCSV(text) {
@@ -147,13 +131,11 @@ async function loadZoningData() {
     headerRowIndex++;
   }
   if (headerRowIndex >= parsed.length) {
-    throw new Error("Could not find a header row in zoning CSV");
+    throw new Error("No header row found in zoning CSV");
   }
 
-  headers = parsed[headerRowIndex].map((h) => (h || "").trim());
-  const dataRows = parsed.slice(headerRowIndex + 1);
-
-  rawRows = dataRows.filter((row) =>
+  headers = parsed[headerRowIndex];
+  rawRows = parsed.slice(headerRowIndex + 1).filter((row) =>
     row.some((cell) => cell && cell.trim() !== "")
   );
   filteredRows = rawRows.slice();
@@ -163,6 +145,9 @@ async function loadPermitsData() {
   try {
     const res = await fetch(PERMITS_URL);
     if (!res.ok) {
+      console.warn(
+        `Permits CSV not loaded (status ${res.status}); continuing without permit stats.`
+      );
       permitHeaders = [];
       permitRows = [];
       filteredPermitRows = [];
@@ -171,6 +156,7 @@ async function loadPermitsData() {
     const text = await res.text();
     const parsed = parseCSV(text);
     if (!parsed.length) {
+      console.warn("Permits CSV appears to be empty; continuing without data.");
       permitHeaders = [];
       permitRows = [];
       filteredPermitRows = [];
@@ -191,9 +177,8 @@ async function loadPermitsData() {
       return;
     }
 
-    permitHeaders = parsed[headerRowIndex].map((h) => (h || "").trim());
+    permitHeaders = parsed[headerRowIndex];
     const dataRows = parsed.slice(headerRowIndex + 1);
-
     permitRows = dataRows.filter((row) =>
       row.some((cell) => cell && cell.trim() !== "")
     );
@@ -214,58 +199,47 @@ function headerIndex(name) {
   return headers.indexOf(name);
 }
 
-function permitsHeaderIndex(name) {
+function pHeaderIndex(name) {
   return permitHeaders.indexOf(name);
 }
 
-function get(row, colName) {
-  const idx = headerIndex(colName);
+function get(row, colKey) {
+  const idx = headerIndex(colKey);
   if (idx === -1) return "";
-  const val = row[idx];
-  return val == null ? "" : String(val).trim();
+  return row[idx] || "";
 }
 
-function getPermit(row, colName) {
-  const idx = permitsHeaderIndex(colName);
+function getPermit(row, colKey) {
+  const idx = pHeaderIndex(colKey);
   if (idx === -1) return "";
-  const val = row[idx];
-  return val == null ? "" : String(val).trim();
+  return row[idx] || "";
 }
 
-function toNumber(val) {
-  if (val == null || val === "") return null;
-  const n = parseFloat(String(val).replace(/,/g, ""));
-  return isNaN(n) ? null : n;
-}
-
-function uniqueValues(colName) {
-  const idx = headerIndex(colName);
+function uniqueValues(colKey) {
+  const idx = headerIndex(colKey);
   if (idx === -1) return [];
   const set = new Set();
   rawRows.forEach((row) => {
-    const v = row[idx] && row[idx].trim();
-    if (v) set.add(v);
+    const v = row[idx];
+    if (v && v.trim()) set.add(v.trim());
   });
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
-function uniquePermitValues(colName) {
-  const idx = permitsHeaderIndex(colName);
-  if (idx === -1) return [];
-  const set = new Set();
-  permitRows.forEach((row) => {
-    const v = row[idx] && row[idx].trim();
-    if (v) set.add(v);
-  });
-  return Array.from(set).sort((a, b) => a.localeCompare(b));
+function toNumber(v) {
+  if (v == null) return null;
+  if (typeof v === "number") return isNaN(v) ? null : v;
+  const num = parseFloat(String(v).replace(/,/g, ""));
+  return isNaN(num) ? null : num;
 }
 
 // =========================================
-// TABLE RENDERING
+// TABLE RENDERING & FILTERS
 // =========================================
 
 function buildTableHeader() {
   const thead = document.getElementById("tableHead");
+  if (!thead) return;
   thead.innerHTML = "";
   const tr = document.createElement("tr");
 
@@ -275,12 +249,18 @@ function buildTableHeader() {
     tr.appendChild(th);
   });
 
+  const thCode = document.createElement("th");
+  thCode.textContent = "Code link";
+  tr.appendChild(thCode);
+
   thead.appendChild(tr);
 }
 
 function renderTable() {
   const tbody = document.getElementById("tableBody");
   const summary = document.getElementById("summary");
+  if (!tbody) return;
+
   tbody.innerHTML = "";
 
   if (summary) {
@@ -303,20 +283,25 @@ function renderTable() {
         a.target = "_blank";
         a.rel = "noopener noreferrer";
         a.textContent = "Code link";
+        a.className = "table-link";
         td.appendChild(a);
       } else {
         td.textContent = text;
       }
+
       tr.appendChild(td);
     });
+
+    // Extra cell for code link if URL column missing
+    if (urlIdx === -1) {
+      const td = document.createElement("td");
+      td.textContent = "—";
+      tr.appendChild(td);
+    }
 
     tbody.appendChild(tr);
   });
 }
-
-// =========================================
-// FILTERS
-// =========================================
 
 function fillSelect(id, colName, placeholder) {
   const el = document.getElementById(id);
@@ -334,50 +319,6 @@ function fillSelect(id, colName, placeholder) {
     opt.value = v;
     opt.textContent = v;
     el.appendChild(opt);
-  });
-}
-
-function initFilters() {
-  fillSelect("cityFilter", COL.city, "All cities");
-  fillSelect("zoneFilter", COL.zone, "All zones");
-  fillSelect("zoneTypeFilter", COL.zoneType, "All zone types");
-  fillSelect("aduFilter", COL.aduAllowed, "Any ADU");
-  fillSelect("daduFilter", COL.daduAllowed, "Any DADU");
-  fillSelect("ownerOccFilter", COL.ownerOcc, "Any owner-occupancy");
-
-  const search = document.getElementById("searchInput");
-  if (search) search.addEventListener("input", applyFilters);
-
-  const clearBtn = document.getElementById("clearFilters");
-  if (clearBtn) {
-    clearBtn.addEventListener("click", () => {
-      [
-        "cityFilter",
-        "zoneFilter",
-        "zoneTypeFilter",
-        "aduFilter",
-        "daduFilter",
-        "ownerOccFilter",
-      ].forEach((id) => {
-        const el = document.getElementById(id);
-        if (el) el.value = "";
-      });
-      if (search) search.value = "";
-      filteredRows = rawRows.slice();
-      renderTable();
-    });
-  }
-
-  [
-    "cityFilter",
-    "zoneFilter",
-    "zoneTypeFilter",
-    "aduFilter",
-    "daduFilter",
-    "ownerOccFilter",
-  ].forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener("change", applyFilters);
   });
 }
 
@@ -418,468 +359,252 @@ function applyFilters() {
   renderTable();
 }
 
-// =========================================
-// MAP
-// =========================================
+function initFilters() {
+  fillSelect("cityFilter", COL.city, "All cities");
+  fillSelect("zoneFilter", COL.zone, "All zones");
+  fillSelect("zoneTypeFilter", COL.zoneType, "All zone types");
+  fillSelect("aduFilter", COL.aduAllowed, "Any ADU");
+  fillSelect("daduFilter", COL.daduAllowed, "Any DADU");
+  fillSelect("ownerOccFilter", COL.ownerOcc, "Any owner-occupancy");
 
-function initMap() {
-  const mapEl = document.getElementById("map");
-  if (!mapEl || typeof L === "undefined") return;
+  const search = document.getElementById("searchInput");
+  if (search) search.addEventListener("input", applyFilters);
 
-  const map = L.map("map").setView([47.55, -122.2], 10);
+  const clearBtn = document.getElementById("clearFilters");
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      [
+        "cityFilter",
+        "zoneFilter",
+        "zoneTypeFilter",
+        "aduFilter",
+        "daduFilter",
+        "ownerOccFilter",
+      ].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.value = "";
+      });
 
-  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "© OpenStreetMap contributors",
-  }).addTo(map);
+      if (search) search.value = "";
 
-  const cityIdx = headerIndex(COL.city);
-  const zoneIdx = headerIndex(COL.zone);
-  const aduIdx = headerIndex(COL.aduAllowed);
-  const daduIdx = headerIndex(COL.daduAllowed);
-  const notesIdx = headerIndex(COL.notes);
+      filteredRows = rawRows.slice();
+      renderTable();
+    });
+  }
 
-  const seen = new Set();
-
-  rawRows.forEach((row) => {
-    const city = (row[cityIdx] || "").trim();
-    if (!city || seen.has(city)) return;
-    seen.add(city);
-
-    const coords = CITY_COORDS[city] || [47.6, -122.2];
-    const zone = row[zoneIdx] || "—";
-    const adu = row[aduIdx] || "—";
-    const dadu = row[daduIdx] || "—";
-    const notes = row[notesIdx] || "—";
-
-    const popupHTML = `
-      <strong>${city}</strong><br/>
-      Example zone: ${zone}<br/>
-      ADUs allowed: ${adu} | DADUs allowed: ${dadu}<br/>
-      <small>${notes}</small>
-    `;
-
-    L.marker(coords).addTo(map).bindPopup(popupHTML);
+  [
+    "cityFilter",
+    "zoneFilter",
+    "zoneTypeFilter",
+    "aduFilter",
+    "daduFilter",
+    "ownerOccFilter",
+  ].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("change", applyFilters);
   });
 }
 
 // =========================================
-// SCORECARD
+// PERMITS TABLE & FILTERS
 // =========================================
 
-function computeCityMetrics(cityRows) {
-  const lotSizes = [];
-  const heights = [];
+function renderPermits() {
+  const tbody = document.getElementById("permitsTableBody");
+  const summary = document.getElementById("permitsSummary");
+  if (!tbody) return;
 
-  let maxADUsAllowed = 0;
-  let parkingScoreRaw = 0;
-  let parkingCount = 0;
+  tbody.innerHTML = "";
 
-  let ownerOccGood = true;
-  let alleyFlex = false;
-  let conversionsGood = false;
-  let feesGood = false;
-  let parkingTransit = false;
+  if (!filteredPermitRows.length) {
+    if (summary) summary.textContent = "No permit data available.";
+    return;
+  }
 
-  cityRows.forEach((row) => {
-    const maxADUsVal = toNumber(get(row, COL.maxADUs));
-    if (maxADUsVal && maxADUsVal > maxADUsAllowed) {
-      maxADUsAllowed = maxADUsVal;
-    }
+  if (summary) {
+    summary.textContent = `${filteredPermitRows.length} permit records shown`;
+  }
 
-    const lotSize = toNumber(get(row, COL.minLotSize));
-    if (lotSize != null) lotSizes.push(lotSize);
+  const cityIdx = pHeaderIndex(PCOL.city);
+  const yearIdx = pHeaderIndex(PCOL.year);
+  const totalIdx = pHeaderIndex(PCOL.totalADUs);
+  const attachedIdx = pHeaderIndex(PCOL.attached);
+  const detachedIdx = pHeaderIndex(PCOL.detached);
+  const convIdx = pHeaderIndex(PCOL.conversion);
 
-    const h = toNumber(get(row, COL.heightPrimary));
-    if (h != null) heights.push(h);
+  filteredPermitRows.forEach((row) => {
+    const tr = document.createElement("tr");
 
-    const parkingReq = (get(row, COL.aduParkingReq) || "").toLowerCase();
-    const parkingNotes = (get(row, COL.parkingNotes) || "").toLowerCase();
-    const parkingTransitFlag = (get(row, COL.aduParkingTransit) || "").toLowerCase();
-    const parkingSmallFlag = (get(row, COL.aduParkingSmall) || "").toLowerCase();
+    const cells = [
+      row[cityIdx] || "—",
+      row[yearIdx] || "—",
+      row[totalIdx] || "—",
+      row[attachedIdx] || "—",
+      row[detachedIdx] || "—",
+      row[convIdx] || "—",
+    ];
 
-    if (parkingReq) {
-      parkingCount++;
-      let val = 0.3;
-      if (parkingReq === "no") val = 1;
-      else if (parkingReq === "conditional") val = 0.6;
+    cells.forEach((text) => {
+      const td = document.createElement("td");
+      td.textContent = text || "—";
+      tr.appendChild(td);
+    });
 
-      if (
-        parkingNotes.includes("no parking required") ||
-        parkingTransitFlag === "yes" ||
-        parkingSmallFlag === "yes"
-      ) {
-        val = Math.max(val, 0.8);
-        parkingTransit = true;
-      }
-      parkingScoreRaw += val;
-    }
+    tbody.appendChild(tr);
+  });
+}
 
-    const ownerReq = (get(row, COL.ownerOcc) || "").toLowerCase();
-    if (ownerReq === "yes") ownerOccGood = false;
+function initPermitsFilters() {
+  const cityEl = document.getElementById("permitsCityFilter");
+  const yearEl = document.getElementById("permitsYearFilter");
+  const clearBtn = document.getElementById("permitsClearFilters");
 
-    const daduNotes = (get(row, COL.daduSetbackNotes) || "").toLowerCase();
-    if (daduNotes.includes("alley") && daduNotes.includes("0 ft")) {
-      alleyFlex = true;
-    }
+  if (!cityEl || !yearEl) return;
 
-    const convAllowed = (get(row, COL.aduConversionAllowed) || "").toLowerCase();
-    const convNotes = (get(row, COL.aduConversionNotes) || "").toLowerCase();
-    if (convAllowed === "yes" || convNotes.includes("convert")) {
-      conversionsGood = true;
-    }
+  const cityIdx = pHeaderIndex(PCOL.city);
+  const yearIdx = pHeaderIndex(PCOL.year);
 
-    const feeNotes = (get(row, COL.impactFees) || "").toLowerCase();
-    if (feeNotes.includes("not required") || feeNotes.includes("waived")) {
-      feesGood = true;
-    }
+  const citySet = new Set();
+  const yearSet = new Set();
+
+  permitRows.forEach((row) => {
+    if (row[cityIdx]) citySet.add(row[cityIdx]);
+    if (row[yearIdx]) yearSet.add(row[yearIdx]);
   });
 
-  const median = (arr) => {
-    if (!arr.length) return null;
-    const s = arr.slice().sort((a, b) => a - b);
-    const mid = Math.floor(s.length / 2);
-    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
-  };
+  cityEl.innerHTML = '<option value="">All cities</option>';
+  Array.from(citySet)
+    .sort()
+    .forEach((c) => {
+      const opt = document.createElement("option");
+      opt.value = c;
+      opt.textContent = c;
+      cityEl.appendChild(opt);
+    });
 
-  const medianLot = median(lotSizes);
-  const medianHeight = median(heights);
-  const avgParkingScore = parkingCount ? parkingScoreRaw / parkingCount : 0.5;
+  yearEl.innerHTML = '<option value="">All years</option>';
+  Array.from(yearSet)
+    .sort()
+    .forEach((y) => {
+      const opt = document.createElement("option");
+      opt.value = y;
+      opt.textContent = y;
+      yearEl.appendChild(opt);
+    });
 
-  return {
-    maxADUsAllowed,
-    medianLot,
-    medianHeight,
-    avgParkingScore,
-    ownerOccGood,
-    alleyFlex,
-    conversionsGood,
-    feesGood,
-    parkingTransit,
-  };
-}
+  function applyPermitFilters() {
+    const cityVal = (cityEl.value || "").trim();
+    const yearVal = (yearEl.value || "").trim();
 
-function scoreFromMetrics(m) {
-  const aduCountFactor =
-    m.maxADUsAllowed >= 2 ? 1 :
-    m.maxADUsAllowed === 1 ? 0.6 :
-    0.2;
+    filteredPermitRows = permitRows.filter((row) => {
+      if (cityVal && row[cityIdx] !== cityVal) return false;
+      if (yearVal && row[yearIdx] !== yearVal) return false;
+      return true;
+    });
 
-  let lotFactor = 0.5;
-  if (m.medianLot != null) {
-    if (m.medianLot <= 3000) lotFactor = 1;
-    else if (m.medianLot <= 5000) lotFactor = 0.8;
-    else if (m.medianLot <= 7200) lotFactor = 0.6;
-    else if (m.medianLot <= 10000) lotFactor = 0.4;
-    else lotFactor = 0.2;
+    renderPermits();
   }
 
-  let heightFactor = 0.5;
-  if (m.medianHeight != null) {
-    if (m.medianHeight <= 20) heightFactor = 0.4;
-    else if (m.medianHeight <= 30) heightFactor = 0.7;
-    else heightFactor = 1;
+  cityEl.addEventListener("change", applyPermitFilters);
+  yearEl.addEventListener("change", applyPermitFilters);
+
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      cityEl.value = "";
+      yearEl.value = "";
+      filteredPermitRows = permitRows.slice();
+      renderPermits();
+    });
   }
-
-  const parkingFactor = m.avgParkingScore || 0.5;
-  const ownerFactor = m.ownerOccGood ? 1 : 0.3;
-  const alleyFactor = m.alleyFlex ? 1 : 0.4;
-  const convFactor = m.conversionsGood ? 1 : 0.6;
-  const feesFactor = m.feesGood ? 0.9 : 0.5;
-
-  const score =
-    aduCountFactor * 0.2 +
-    parkingFactor * 0.2 +
-    alleyFactor * 0.1 +
-    lotFactor * 0.1 +
-    heightFactor * 0.1 +
-    ownerFactor * 0.1 +
-    convFactor * 0.1 +
-    feesFactor * 0.1;
-
-  return Math.round(score * 100);
 }
 
-function gradeFromScore(score) {
-  if (score >= 90) return "A+";
-  if (score >= 85) return "A";
-  if (score >= 80) return "A-";
-  if (score >= 75) return "B+";
-  if (score >= 70) return "B";
-  if (score >= 65) return "B-";
-  if (score >= 60) return "C+";
-  if (score >= 55) return "C";
-  if (score >= 50) return "C-";
-  if (score >= 40) return "D";
-  return "F";
-}
+// =========================================
+// CITY SCORECARDS (SUMMARY)
+// =========================================
 
 function renderCityScorecards() {
   const container = document.getElementById("cityScorecards");
-  if (!container || !rawRows.length) return;
-
-  const byCity = {};
-  rawRows.forEach((row) => {
-    const city = get(row, COL.city) || "Unknown";
-    if (!byCity[city]) byCity[city] = [];
-    byCity[city].push(row);
-  });
-
-  const summaries = Object.keys(byCity).map((city) => {
-    const metrics = computeCityMetrics(byCity[city]);
-    const score = scoreFromMetrics(metrics);
-    const grade = gradeFromScore(score);
-    return { city, score, grade, metrics };
-  });
-
-  summaries.sort((a, b) => b.score - a.score);
+  if (!container) return;
 
   container.innerHTML = "";
 
-  summaries.forEach((s) => {
-    const card = document.createElement("div");
-    card.className = "scorecard-item";
+  const cityIdx = headerIndex(COL.city);
+  const aduIdx = headerIndex(COL.aduAllowed);
+  const daduIdx = headerIndex(COL.daduAllowed);
+  const maxADUIdx = headerIndex(COL.maxADUSize);
+  const minLotIdx = headerIndex(COL.minLotSize);
 
-    const header = document.createElement("div");
-    header.className = "scorecard-header";
-    header.innerHTML = `
-      <span class="scorecard-city">${s.city}</span>
-      <span class="scorecard-grade">${s.grade}</span>
+  const byCity = new Map();
+
+  rawRows.forEach((row) => {
+    const city = row[cityIdx] || "Unknown";
+    if (!byCity.has(city)) {
+      byCity.set(city, []);
+    }
+    byCity.get(city).push(row);
+  });
+
+  const sortedCities = Array.from(byCity.keys()).sort((a, b) =>
+    a.localeCompare(b)
+  );
+
+  sortedCities.forEach((city) => {
+    const rows = byCity.get(city);
+    let anyADU = false;
+    let anyDADU = false;
+    let maxADU = null;
+    let minLot = null;
+
+    rows.forEach((row) => {
+      const adu = (row[aduIdx] || "").toLowerCase();
+      const dadu = (row[daduIdx] || "").toLowerCase();
+      if (adu === "yes" || adu === "y" || adu === "true") anyADU = true;
+      if (dadu === "yes" || dadu === "y" || dadu === "true") anyDADU = true;
+
+      const m = toNumber(row[maxADUIdx]);
+      if (m != null) {
+        if (maxADU == null || m > maxADU) maxADU = m;
+      }
+
+      const lot = toNumber(row[minLotIdx]);
+      if (lot != null) {
+        if (minLot == null || lot < minLot) minLot = lot;
+      }
+    });
+
+    const card = document.createElement("div");
+    card.className = "city-card";
+
+    const status = anyADU
+      ? anyDADU
+        ? "ADU + DADU"
+        : "ADU only"
+      : "No ADU";
+
+    card.innerHTML = `
+      <h3>${city}</h3>
+      <p class="city-status">${status}</p>
+      <ul>
+        <li><strong>Max ADU size</strong>: ${
+          maxADU != null ? `${maxADU} sf` : "Not listed"
+        }</li>
+        <li><strong>Smallest min lot size</strong>: ${
+          minLot != null ? `${minLot.toLocaleString()} sf` : "Not listed"
+        }</li>
+      </ul>
     `;
 
-    const barWrap = document.createElement("div");
-    barWrap.className = "scorecard-bar-wrap";
-    const bar = document.createElement("div");
-    bar.className = "scorecard-bar";
-    bar.style.width = s.score + "%";
-    bar.textContent = s.score.toString();
-    barWrap.appendChild(bar);
-
-    const bullets = document.createElement("ul");
-    bullets.className = "scorecard-bullets";
-
-    const aduText =
-      s.metrics.maxADUsAllowed >= 2
-        ? `Up to ${s.metrics.maxADUsAllowed} ADUs per lot in the most permissive zones.`
-        : s.metrics.maxADUsAllowed === 1
-        ? "Only one ADU per lot allowed in most zones."
-        : "ADU count per lot is not clearly specified in the dataset.";
-
-    const li1 = document.createElement("li");
-    li1.textContent = aduText;
-    bullets.appendChild(li1);
-
-    if (s.metrics.parkingTransit) {
-      const li2 = document.createElement("li");
-      li2.textContent =
-        "ADU parking relief near transit or for small units is available.";
-      bullets.appendChild(li2);
-    }
-
-    if (s.metrics.alleyFlex) {
-      const li3 = document.createElement("li");
-      li3.textContent = "Alley-facing ADUs may reduce side or rear setbacks.";
-      bullets.appendChild(li3);
-    }
-
-    if (!s.metrics.ownerOccGood) {
-      const li4 = document.createElement("li");
-      li4.textContent =
-        "Owner-occupancy requirements may still apply in some districts.";
-      bullets.appendChild(li4);
-    }
-
-    card.appendChild(header);
-    card.appendChild(barWrap);
-    card.appendChild(bullets);
     container.appendChild(card);
   });
 }
 
-// =========================================
-// PERMITS FEED
-// =========================================
-
-function initPermitsFilters() {
-  const citySelect = document.getElementById("permitsCityFilter");
-  const statusSelect = document.getElementById("permitsStatusFilter");
-  const limitSelect = document.getElementById("permitsLimit");
-  const clearBtn = document.getElementById("clearPermitsFilters");
-
-  if (!citySelect || !statusSelect || !limitSelect || !clearBtn) return;
-
-  citySelect.innerHTML = "";
-  const optAll = document.createElement("option");
-  optAll.value = "";
-  optAll.textContent = "All cities";
-  citySelect.appendChild(optAll);
-  uniquePermitValues(PCOL.city).forEach((c) => {
-    const opt = document.createElement("option");
-    opt.value = c;
-    opt.textContent = c;
-    citySelect.appendChild(opt);
-  });
-
-  statusSelect.innerHTML = "";
-  const optAny = document.createElement("option");
-  optAny.value = "";
-  optAny.textContent = "Any status";
-  statusSelect.appendChild(optAny);
-  uniquePermitValues(PCOL.status).forEach((s) => {
-    const opt = document.createElement("option");
-    opt.value = s;
-    opt.textContent = s;
-    statusSelect.appendChild(opt);
-  });
-
-  citySelect.addEventListener("change", applyPermitFilters);
-  statusSelect.addEventListener("change", applyPermitFilters);
-  limitSelect.addEventListener("change", applyPermitFilters);
-
-  clearBtn.addEventListener("click", () => {
-    citySelect.value = "";
-    statusSelect.value = "";
-    limitSelect.value = "10";
-    filteredPermitRows = permitRows.slice();
-    renderPermits();
-  });
-}
-
-function applyPermitFilters() {
-  const cityVal = (document.getElementById("permitsCityFilter").value || "").trim();
-  const statusVal = (document.getElementById("permitsStatusFilter").value || "").trim();
-  const limitVal = parseInt(
-    document.getElementById("permitsLimit").value || "10",
-    10
-  );
-
-  filteredPermitRows = permitRows.filter((row) => {
-    const c = getPermit(row, PCOL.city);
-    const s = getPermit(row, PCOL.status);
-    if (cityVal && c !== cityVal) return false;
-    if (statusVal && s !== statusVal) return false;
-    return true;
-  });
-
-  filteredPermitRows.sort((a, b) => {
-    const da = Date.parse(getPermit(a, PCOL.approvalDate)) || 0;
-    const db = Date.parse(getPermit(b, PCOL.approvalDate)) || 0;
-    return db - da;
-  });
-
-  filteredPermitRows = filteredPermitRows.slice(0, limitVal);
-
-  renderPermits();
-}
-
-function renderPermits() {
-  const list = document.getElementById("permitsList");
-  const summary = document.getElementById("permitsSummary");
-  if (!list || !summary) return;
-
-  list.innerHTML = "";
-
-  if (!permitRows.length) {
-    summary.textContent =
-      "No permit dataset loaded yet. Add adu_permits.csv to the repo to see recent ADU activity.";
-    return;
-  }
-
-  if (!filteredPermitRows.length) {
-    summary.textContent = "No permits match the current filters.";
-    return;
-  }
-
-  summary.textContent = `${filteredPermitRows.length} permit(s) shown.`;
-
-  filteredPermitRows.forEach((row) => {
-    const city = getPermit(row, PCOL.city) || "Unknown city";
-    const proj = getPermit(row, PCOL.project) || "Unnamed project";
-    const status = getPermit(row, PCOL.status) || "Status unknown";
-    const type = getPermit(row, PCOL.type) || "ADU";
-    const zone = getPermit(row, PCOL.zone) || "n/a";
-    const size = getPermit(row, PCOL.size);
-    const dateStr = getPermit(row, PCOL.approvalDate);
-    const permitNumber = getPermit(row, PCOL.permitNumber);
-    const parcel = getPermit(row, PCOL.parcel);
-    const notes = getPermit(row, PCOL.notes);
-    const url = getPermit(row, PCOL.url);
-
-    const item = document.createElement("div");
-    item.className = "permit-item";
-
-    const header = document.createElement("div");
-    header.className = "permit-header";
-    header.innerHTML = `
-      <span class="permit-project">${proj}</span>
-      <span class="permit-meta">${city} • ${status}</span>
-    `;
-
-    const meta = document.createElement("div");
-    meta.className = "permit-meta";
-
-    const details = [];
-    if (type) details.push(type);
-    if (zone) details.push(`Zone ${zone}`);
-    if (size) details.push(`${size} sf`);
-    if (dateStr) details.push(dateStr);
-    if (permitNumber) details.push(`Permit #${permitNumber}`);
-    if (parcel) details.push(`Parcel ${parcel}`);
-
-    meta.textContent = details.join(" • ");
-
-    const tagsWrap = document.createElement("div");
-    tagsWrap.className = "permit-tags";
-
-    if (type) {
-      const tag = document.createElement("span");
-      tag.className = "permit-tag";
-      tag.textContent = type;
-      tagsWrap.appendChild(tag);
-    }
-
-    if (/issued|approved/i.test(status)) {
-      const tag = document.createElement("span");
-      tag.className = "permit-tag";
-      tag.textContent = "Approved";
-      tagsWrap.appendChild(tag);
-    } else if (/review/i.test(status)) {
-      const tag = document.createElement("span");
-      tag.className = "permit-tag";
-      tag.textContent = "In review";
-      tagsWrap.appendChild(tag);
-    }
-
-    const notesEl = document.createElement("div");
-    notesEl.className = "permit-notes";
-    if (notes) notesEl.textContent = notes;
-
-    const linkEl = document.createElement("div");
-    linkEl.className = "permit-link";
-    if (url) {
-      const a = document.createElement("a");
-      a.href = url;
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      a.textContent = "View permit / documents";
-      linkEl.appendChild(a);
-    }
-
-    item.appendChild(header);
-    item.appendChild(meta);
-    if (tagsWrap.childNodes.length) item.appendChild(tagsWrap);
-    if (notes) item.appendChild(notesEl);
-    if (url) item.appendChild(linkEl);
-
-    list.appendChild(item);
-  });
-}
 // =========================================
 // FEASIBILITY CHECKER (INTERACTIVE DIAGRAM)
 // =========================================
 
 const FEAS_DIAGRAM_STATE = {
   scale: 1,
-  drawWidthPx: 450,   // smaller canvas so it fits
+  drawWidthPx: 450,
   drawHeightPx: 260,
   marginPx: 16,
   lot: {
@@ -890,13 +615,12 @@ const FEAS_DIAGRAM_STATE = {
     sideSetFt: 5,
     rearSetFt: 25,
   },
-  home: null,  // { xFt, yFt, widthFt, depthFt }
-  adu: null,   // { xFt, yFt, widthFt, depthFt, baseTargetSqft }
+  home: null,
+  adu: null,
   svg: null,
-  dragging: null,   // { shape: 'home'|'adu', offsetXFt, offsetYFt }
-  resizing: null,   // { shape: 'home'|'adu', corner: 'tl'|'tr'|'bl'|'br' }
-  lotResize: null,  // { edge: 'right'|'bottom' }
-  _mouseHandlersAttached: false,
+  dragging: null,
+  resizing: null,
+  lotResize: null,
 };
 
 function initFeasibility() {
@@ -926,7 +650,6 @@ function initFeasibility() {
     return;
   }
 
-  // ---- Fill city options ----
   citySel.innerHTML = "";
   const cities = uniqueValues(COL.city);
   const optBlankCity = document.createElement("option");
@@ -971,7 +694,6 @@ function initFeasibility() {
     fillZonesForCity(citySel.value || "");
   });
 
-  // ---- Run feasibility on click ----
   runBtn.addEventListener("click", () => {
     const city = citySel.value || "";
     const zone = zoneSel.value || "";
@@ -998,9 +720,6 @@ function initFeasibility() {
     );
   });
 
-  // -----------------------------
-  // Inner: feasibility evaluation
-  // -----------------------------
   function runFeasibilityCheck(
     city,
     zone,
@@ -1026,7 +745,6 @@ function initFeasibility() {
       return;
     }
 
-    // If lot width/depth provided but lotSize not, compute it
     if (!lotSize && lotWidth && lotDepth) {
       lotSize = Math.round(lotWidth * lotDepth);
       lotSizeInput.value = lotSize;
@@ -1076,7 +794,6 @@ function initFeasibility() {
     const bulletPoints = [];
     let feasibilityOK = true;
 
-    // ADU / DADU allowed?
     if (aduAllowed === "yes" || aduAllowed === "y" || aduAllowed === "true") {
       bulletPoints.push("ADUs are allowed in this zone.");
     } else if (aduAllowed) {
@@ -1094,7 +811,6 @@ function initFeasibility() {
       );
     }
 
-    // Lot size vs min lot size
     if (minLotSize != null) {
       if (lotSize >= minLotSize) {
         bulletPoints.push(
@@ -1110,7 +826,6 @@ function initFeasibility() {
       bulletPoints.push("Minimum lot size is not defined in the dataset.");
     }
 
-    // ADU size vs max
     if (aduSize != null && !isNaN(aduSize) && aduSize > 0) {
       if (maxADUSize != null) {
         if (aduSize <= maxADUSize) {
@@ -1134,7 +849,6 @@ function initFeasibility() {
       );
     }
 
-    // Parking logic
     let parkingSummary = "";
     if (!parkingReq) {
       parkingSummary =
@@ -1173,7 +887,6 @@ function initFeasibility() {
     }
     bulletPoints.push(parkingSummary);
 
-    // Alley flex
     if (hasAlley) {
       if (
         (get(row, COL.alleyAccess) || "").toLowerCase() === "yes" ||
@@ -1189,7 +902,6 @@ function initFeasibility() {
       }
     }
 
-    // Setbacks / height
     const sh = [];
     if (frontSetback) sh.push(`front: ${frontSetback} ft`);
     if (sideSetback) sh.push(`side: ${sideSetback} ft`);
@@ -1251,9 +963,6 @@ function initFeasibility() {
     );
   }
 
-  // ---------------------------------------
-  // Inner: interactive diagram with editing
-  // ---------------------------------------
   function drawFeasDiagram(
     row,
     lotSize,
@@ -1266,7 +975,12 @@ function initFeasibility() {
     const diagramEl = document.getElementById("feasDiagram");
     if (!diagramEl) return;
 
-    // ----- LOT & SCALE SETUP (IN FEET) -----
+    FEAS_DIAGRAM_STATE.home = null;
+    FEAS_DIAGRAM_STATE.adu = null;
+    FEAS_DIAGRAM_STATE.dragging = null;
+    FEAS_DIAGRAM_STATE.resizing = null;
+    FEAS_DIAGRAM_STATE.lotResize = null;
+
     const lotWidthFt = lotWidthInput && lotWidthInput > 0 ? lotWidthInput : 40;
     const lotDepthFt = lotDepthInput && lotDepthInput > 0 ? lotDepthInput : 100;
 
@@ -1285,7 +999,6 @@ function initFeasibility() {
     const drawWidthPx = FEAS_DIAGRAM_STATE.drawWidthPx;
     const drawHeightPx = FEAS_DIAGRAM_STATE.drawHeightPx;
 
-    // Scale to fill height nicely (lot depth controls overall scale)
     const maxPixelHeight = drawHeightPx - 2 * marginPx;
     const scale = maxPixelHeight / lotDepthFt;
     FEAS_DIAGRAM_STATE.scale = scale;
@@ -1300,7 +1013,6 @@ function initFeasibility() {
     const pxToFtX = (px) => (px - lotLeftPx) / scale;
     const pxToFtY = (px) => (px - lotTopPx) / scale;
 
-    // ----- BUILDABLE AREA (IN FEET) -----
     const buildableLeftFt = sideSetFt;
     const buildableTopFt = frontSetFt;
     const buildableWidthFt = Math.max(
@@ -1312,62 +1024,57 @@ function initFeasibility() {
       5
     );
 
-    // ----- INITIAL HOME & ADU IF NEEDED -----
-    if (!FEAS_DIAGRAM_STATE.home || !FEAS_DIAGRAM_STATE.adu) {
-      const defaultHomeWidthFt = lotWidthFt * 0.6;
-      const defaultHomeDepthFt = lotDepthFt * 0.35;
+    const defaultHomeWidthFt = lotWidthFt * 0.6;
+    const defaultHomeDepthFt = lotDepthFt * 0.35;
 
-      const homeWidthFt =
-        houseWidthInput && houseWidthInput > 0
-          ? houseWidthInput
-          : defaultHomeWidthFt;
-      const homeDepthFt =
-        houseDepthInput && houseDepthInput > 0
-          ? houseDepthInput
-          : defaultHomeDepthFt;
+    const homeWidthFt =
+      houseWidthInput && houseWidthInput > 0
+        ? houseWidthInput
+        : defaultHomeWidthFt;
+    const homeDepthFt =
+      houseDepthInput && houseDepthInput > 0
+        ? houseDepthInput
+        : defaultHomeDepthFt;
 
-      const homeXFt =
-        buildableLeftFt + (buildableWidthFt - homeWidthFt) * 0.5;
-      const homeYFt = buildableTopFt + 2;
+    const homeXFt =
+      buildableLeftFt + (buildableWidthFt - homeWidthFt) * 0.5;
+    const homeYFt = buildableTopFt + 2;
 
-      let aduWidthFt = 20;
-      let aduDepthFt = 20;
-      if (aduSize && aduSize > 0) {
-        const side = Math.sqrt(aduSize);
-        aduWidthFt = side;
-        aduDepthFt = side;
-      }
-
-      aduWidthFt = Math.min(aduWidthFt, buildableWidthFt * 0.8);
-      aduDepthFt = Math.min(aduDepthFt, buildableHeightFt * 0.6);
-
-      const aduXFt = buildableLeftFt + (buildableWidthFt - aduWidthFt) * 0.5;
-      const aduYFt =
-        buildableTopFt + buildableHeightFt - aduDepthFt - 2;
-
-      FEAS_DIAGRAM_STATE.home = {
-        xFt: homeXFt,
-        yFt: homeYFt,
-        widthFt: homeWidthFt,
-        depthFt: homeDepthFt,
-      };
-
-      FEAS_DIAGRAM_STATE.adu = {
-        xFt: aduXFt,
-        yFt: aduYFt,
-        widthFt: aduWidthFt,
-        depthFt: aduDepthFt,
-        baseTargetSqft: aduSize || null,
-      };
+    let aduWidthFt = 20;
+    let aduDepthFt = 20;
+    if (aduSize && aduSize > 0) {
+      const side = Math.sqrt(aduSize);
+      aduWidthFt = side;
+      aduDepthFt = side;
     }
+
+    aduWidthFt = Math.min(aduWidthFt, buildableWidthFt * 0.8);
+    aduDepthFt = Math.min(aduDepthFt, buildableHeightFt * 0.6);
+
+    const aduXFt = buildableLeftFt + (buildableWidthFt - aduWidthFt) * 0.5;
+    const aduYFt =
+      buildableTopFt + buildableHeightFt - aduDepthFt - 2;
+
+    FEAS_DIAGRAM_STATE.home = {
+      xFt: homeXFt,
+      yFt: homeYFt,
+      widthFt: homeWidthFt,
+      depthFt: homeDepthFt,
+    };
+
+    FEAS_DIAGRAM_STATE.adu = {
+      xFt: aduXFt,
+      yFt: aduYFt,
+      widthFt: aduWidthFt,
+      depthFt: aduDepthFt,
+      baseTargetSqft: aduSize || null,
+    };
 
     const lotLabel =
       "Lot" + (lotSize ? ` (${lotSize.toLocaleString()} sf)` : "");
 
-    // ----- SVG SKELETON -----
     diagramEl.innerHTML = `
       <svg id="feasSvg" width="100%" height="100%" viewBox="0 0 ${drawWidthPx} ${drawHeightPx}">
-        <!-- Lot outline -->
         <rect id="lotRect"
               x="${lotLeftPx}" y="${lotTopPx}"
               width="${lotPixelWidth}"
@@ -1379,7 +1086,6 @@ function initFeasibility() {
           ${lotLabel}
         </text>
 
-        <!-- Buildable area -->
         <rect id="buildableRect"
               x="${ftToPxX(buildableLeftFt)}"
               y="${ftToPxY(buildableTopFt)}"
@@ -1395,7 +1101,6 @@ function initFeasibility() {
           Buildable area (setbacks)
         </text>
 
-        <!-- Lot edge handles -->
         <circle id="lotHandleRight"
                 class="lot-handle"
                 cx="${lotLeftPx + lotPixelWidth}"
@@ -1407,17 +1112,22 @@ function initFeasibility() {
                 cy="${lotTopPx + lotPixelHeight}"
                 r="6" fill="#10b981" stroke="#064e3b" stroke-width="1.5" />
 
-   <!-- Existing home group -->
-<g id="homeGroup" class="shape-group" data-shape="home">
-  <rect id="homeRect" fill="#111827" rx="6" ry="6" />
-  <text id="homeLabel" font-size="11"></text>
-  ...
-</g>
+        <g id="homeGroup" class="shape-group" data-shape="home">
+          <rect id="homeRect" fill="#111827" rx="6" ry="6" />
+          <text id="homeLabel" font-size="11"></text>
+          <circle class="resize-handle" data-shape="home" data-corner="tl" r="5" fill="#fbbf24" />
+          <circle class="resize-handle" data-shape="home" data-corner="tr" r="5" fill="#fbbf24" />
+          <circle class="resize-handle" data-shape="home" data-corner="bl" r="5" fill="#fbbf24" />
+          <circle class="resize-handle" data-shape="home" data-corner="br" r="5" fill="#fbbf24" />
+        </g>
 
-<!-- ADU group -->
-<g id="aduGroup" class="shape-group" data-shape="adu">
-  <rect id="aduRect" fill="rgba(79,70,229,0.85)" rx="6" ry="6" />
-  <text id="aduLabel" font-size="11"></text>
+        <g id="aduGroup" class="shape-group" data-shape="adu">
+          <rect id="aduRect" fill="rgba(79,70,229,0.85)" rx="6" ry="6" />
+          <text id="aduLabel" font-size="11"></text>
+          <circle class="resize-handle" data-shape="adu" data-corner="tl" r="5" fill="#f97316" />
+          <circle class="resize-handle" data-shape="adu" data-corner="tr" r="5" fill="#f97316" />
+          <circle class="resize-handle" data-shape="adu" data-corner="bl" r="5" fill="#f97316" />
+          <circle class="resize-handle" data-shape="adu" data-corner="br" r="5" fill="#f97316" />
         </g>
 
         <text x="${drawWidthPx / 2}"
@@ -1455,7 +1165,6 @@ function initFeasibility() {
       const lot = FEAS_DIAGRAM_STATE.lot;
       const home = FEAS_DIAGRAM_STATE.home;
       const adu = FEAS_DIAGRAM_STATE.adu;
-      const scale = FEAS_DIAGRAM_STATE.scale;
 
       clampShape(home);
       clampShape(adu);
@@ -1472,7 +1181,6 @@ function initFeasibility() {
       lotLabelEl.textContent =
         "Lot" + (lotArea ? ` (${lotArea.toLocaleString()} sf)` : "");
 
-      // Update buildable box
       const bLeftFt = lot.sideSetFt;
       const bTopFt = lot.frontSetFt;
       const bWidthFt = Math.max(lot.widthFt - 2 * lot.sideSetFt, 5);
@@ -1489,13 +1197,11 @@ function initFeasibility() {
       buildableLabel.setAttribute("x", ftToPxX(bLeftFt) + 6);
       buildableLabel.setAttribute("y", ftToPxY(bTopFt) + 16);
 
-      // Lot handles
       lotHandleRight.setAttribute("cx", lotLeftPx + lotWpx);
       lotHandleRight.setAttribute("cy", lotTopPx + lotHpx / 2);
       lotHandleBottom.setAttribute("cx", lotLeftPx + lotWpx / 2);
       lotHandleBottom.setAttribute("cy", lotTopPx + lotHpx);
 
-      // Home
       const hx = ftToPxX(home.xFt);
       const hy = ftToPxY(home.yFt);
       const hw = home.widthFt * scale;
@@ -1512,7 +1218,6 @@ function initFeasibility() {
       homeLabel.setAttribute("y", hy + 16);
       homeLabel.setAttribute("fill", "#111827");
 
-
       const homeHandles = svg.querySelectorAll(
         '.resize-handle[data-shape="home"]'
       );
@@ -1526,7 +1231,6 @@ function initFeasibility() {
         h.setAttribute("cy", cy);
       });
 
-      // ADU
       const ax = ftToPxX(adu.xFt);
       const ay = ftToPxY(adu.yFt);
       const aw = adu.widthFt * scale;
@@ -1543,7 +1247,6 @@ function initFeasibility() {
       aduLabel.setAttribute("y", ay + 16);
       aduLabel.setAttribute("fill", "#111827");
 
-
       const aduHandles = svg.querySelectorAll(
         '.resize-handle[data-shape="adu"]'
       );
@@ -1557,7 +1260,6 @@ function initFeasibility() {
         h.setAttribute("cy", cy);
       });
 
-      // Sync back to inputs
       const widthInput = document.getElementById("feasLotWidth");
       const depthInput = document.getElementById("feasLotDepth");
       const sizeInput = document.getElementById("feasLotSize");
@@ -1568,7 +1270,6 @@ function initFeasibility() {
 
     redrawAll();
 
-    // ---- SHAPE DRAGGING ----
     function startDragShape(evt, shapeName) {
       const shape = FEAS_DIAGRAM_STATE[shapeName];
       const pt = svg.createSVGPoint();
@@ -1580,233 +1281,111 @@ function initFeasibility() {
       FEAS_DIAGRAM_STATE.dragging = { shape: shapeName, offsetXFt, offsetYFt };
     }
 
-    homeGroup.addEventListener("mousedown", (e) => {
+    homeGroup.onmousedown = (e) => {
       if (e.target.classList.contains("resize-handle")) return;
       startDragShape(e, "home");
-    });
+    };
 
-    aduGroup.addEventListener("mousedown", (e) => {
+    aduGroup.onmousedown = (e) => {
       if (e.target.classList.contains("resize-handle")) return;
       startDragShape(e, "adu");
-    });
+    };
 
-    // ---- SHAPE RESIZING ----
     function startResize(evt, shapeName, corner) {
       FEAS_DIAGRAM_STATE.resizing = { shape: shapeName, corner };
       evt.stopPropagation();
     }
 
     handles.forEach((h) => {
-      h.addEventListener("mousedown", (e) => {
+      h.onmousedown = (e) => {
         const shapeName = h.getAttribute("data-shape");
         const corner = h.getAttribute("data-corner");
         startResize(e, shapeName, corner);
-      });
+      };
     });
 
-    // ---- LOT EDGE RESIZING ----
-    lotHandleRight.addEventListener("mousedown", (e) => {
+    lotHandleRight.onmousedown = (e) => {
       FEAS_DIAGRAM_STATE.lotResize = { edge: "right" };
       e.stopPropagation();
-    });
+    };
 
-    lotHandleBottom.addEventListener("mousedown", (e) => {
+    lotHandleBottom.onmousedown = (e) => {
       FEAS_DIAGRAM_STATE.lotResize = { edge: "bottom" };
       e.stopPropagation();
-    });
+    };
 
-    // ---- GLOBAL MOUSE HANDLERS (run once) ----
-    if (!FEAS_DIAGRAM_STATE._mouseHandlersAttached) {
-      FEAS_DIAGRAM_STATE._mouseHandlersAttached = true;
+    svg.onmousemove = (evt) => {
+      const lot = FEAS_DIAGRAM_STATE.lot;
 
-      window.addEventListener("mousemove", (evt) => {
-        const svg = FEAS_DIAGRAM_STATE.svg;
-        if (!svg) return;
+      const pt = svg.createSVGPoint();
+      pt.x = evt.clientX;
+      pt.y = evt.clientY;
+      const svgPt = pt.matrixTransform(svg.getScreenCTM().inverse());
 
-        const pt = svg.createSVGPoint();
-        pt.x = evt.clientX;
-        pt.y = evt.clientY;
-        const svgPt = pt.matrixTransform(svg.getScreenCTM().inverse());
-        const lot = FEAS_DIAGRAM_STATE.lot;
-        const scale = FEAS_DIAGRAM_STATE.scale;
+      if (FEAS_DIAGRAM_STATE.dragging) {
+        const drag = FEAS_DIAGRAM_STATE.dragging;
+        const shape = FEAS_DIAGRAM_STATE[drag.shape];
+        const newXFt = pxToFtX(svgPt.x) - drag.offsetXFt;
+        const newYFt = pxToFtY(svgPt.y) - drag.offsetYFt;
+        shape.xFt = newXFt;
+        shape.yFt = newYFt;
+        redrawAll();
+        return;
+      }
 
-        // Dragging shapes
-        if (FEAS_DIAGRAM_STATE.dragging) {
-          const drag = FEAS_DIAGRAM_STATE.dragging;
-          const shape = FEAS_DIAGRAM_STATE[drag.shape];
-          const newXFt = pxToFtX(svgPt.x) - drag.offsetXFt;
-          const newYFt = pxToFtY(svgPt.y) - drag.offsetYFt;
+      if (FEAS_DIAGRAM_STATE.resizing) {
+        const rs = FEAS_DIAGRAM_STATE.resizing;
+        const shape = FEAS_DIAGRAM_STATE[rs.shape];
+
+        const lotXFt = pxToFtX(svgPt.x);
+        const lotYFt = pxToFtY(svgPt.y);
+        const minSizeFt = 5;
+
+        if (rs.corner === "tl") {
+          const newRightFt = shape.xFt + shape.widthFt;
+          let newXFt = Math.min(lotXFt, newRightFt - minSizeFt);
+          newXFt = Math.max(0, newXFt);
+          shape.widthFt = newRightFt - newXFt;
           shape.xFt = newXFt;
+        } else if (rs.corner === "tr") {
+          const newWidthFt = Math.max(minSizeFt, lotXFt - shape.xFt);
+          shape.widthFt = Math.min(newWidthFt, lot.widthFt - shape.xFt);
+        } else if (rs.corner === "bl") {
+          const newBottomFt = shape.yFt + shape.depthFt;
+          let newYFt = Math.min(lotYFt, newBottomFt - minSizeFt);
+          newYFt = Math.max(0, newYFt);
+          shape.depthFt = newBottomFt - newYFt;
           shape.yFt = newYFt;
-          redrawAll();
-          return;
+        } else if (rs.corner === "br") {
+          const newDepthFt = Math.max(minSizeFt, lotYFt - shape.yFt);
+          shape.depthFt = Math.min(newDepthFt, lot.depthFt - shape.yFt);
         }
 
-        // Resizing shapes
-        if (FEAS_DIAGRAM_STATE.resizing) {
-          const rs = FEAS_DIAGRAM_STATE.resizing;
-          const shape = FEAS_DIAGRAM_STATE[rs.shape];
+        redrawAll();
+        return;
+      }
 
-          const lotXFt = pxToFtX(svgPt.x);
-          const lotYFt = pxToFtY(svgPt.y);
-          const minSizeFt = 5;
-
-          if (rs.corner === "tl") {
-            const newRightFt = shape.xFt + shape.widthFt;
-            let newXFt = Math.min(lotXFt, newRightFt - minSizeFt);
-            newXFt = Math.max(0, newXFt);
-            shape.widthFt = newRightFt - newXFt;
-            shape.xFt = newXFt;
-          } else if (rs.corner === "tr") {
-            const newWidthFt = Math.max(minSizeFt, lotXFt - shape.xFt);
-            shape.widthFt = Math.min(newWidthFt, lot.widthFt - shape.xFt);
-          } else if (rs.corner === "bl") {
-            const newBottomFt = shape.yFt + shape.depthFt;
-            let newYFt = Math.min(lotYFt, newBottomFt - minSizeFt);
-            newYFt = Math.max(0, newYFt);
-            shape.depthFt = newBottomFt - newYFt;
-            shape.yFt = newYFt;
-          } else if (rs.corner === "br") {
-            const newDepthFt = Math.max(minSizeFt, lotYFt - shape.yFt);
-            shape.depthFt = Math.min(newDepthFt, lot.depthFt - shape.yFt);
-          }
-
-          redrawAll();
-          return;
+      if (FEAS_DIAGRAM_STATE.lotResize) {
+        const lr = FEAS_DIAGRAM_STATE.lotResize;
+        if (lr.edge === "right") {
+          let newWidthFt = (svgPt.x - lotLeftPx) / scale;
+          newWidthFt = Math.max(20, Math.min(lot.maxFt, newWidthFt));
+          lot.widthFt = newWidthFt;
+        } else if (lr.edge === "bottom") {
+          let newDepthFt = (svgPt.y - lotTopPx) / scale;
+          newDepthFt = Math.max(20, Math.min(lot.maxFt, newDepthFt));
+          lot.depthFt = newDepthFt;
         }
+        redrawAll();
+      }
+    };
 
-        // Resizing lot edges
-        if (FEAS_DIAGRAM_STATE.lotResize) {
-          const lr = FEAS_DIAGRAM_STATE.lotResize;
-          if (lr.edge === "right") {
-            let newWidthFt = (svgPt.x - lotLeftPx) / scale;
-            newWidthFt = Math.max(20, Math.min(lot.maxFt, newWidthFt));
-            lot.widthFt = newWidthFt;
-          } else if (lr.edge === "bottom") {
-            let newDepthFt = (svgPt.y - lotTopPx) / scale;
-            newDepthFt = Math.max(20, Math.min(lot.maxFt, newDepthFt));
-            lot.depthFt = newDepthFt;
-          }
-          redrawAll();
-        }
-      });
-
-      window.addEventListener("mouseup", () => {
-        FEAS_DIAGRAM_STATE.dragging = null;
-        FEAS_DIAGRAM_STATE.resizing = null;
-        FEAS_DIAGRAM_STATE.lotResize = null;
-      });
-    }
+    window.onmouseup = () => {
+      FEAS_DIAGRAM_STATE.dragging = null;
+      FEAS_DIAGRAM_STATE.resizing = null;
+      FEAS_DIAGRAM_STATE.lotResize = null;
+    };
   }
-}
-
-// =========================================
-// CITY COMPARISON MODAL
-// =========================================
-
-function initCompareModal() {
-  const openBtn = document.getElementById("openCompare");
-  const closeBtn = document.getElementById("closeCompare");
-  const modal = document.getElementById("compareModal");
-  const runBtn = document.getElementById("runCompare");
-  const select = document.getElementById("compareCitySelect");
-  const results = document.getElementById("compareResults");
-
-  if (!openBtn || !closeBtn || !modal || !runBtn || !select || !results) return;
-
-  openBtn.addEventListener("click", () => {
-    modal.style.display = "block";
-
-    const cities = uniqueValues(COL.city);
-    select.innerHTML = "";
-    cities.forEach((c) => {
-      const opt = document.createElement("option");
-      opt.value = c;
-      opt.textContent = c;
-      select.appendChild(opt);
-    });
-  });
-
-  closeBtn.addEventListener("click", () => {
-    modal.style.display = "none";
-  });
-
-  window.addEventListener("click", (e) => {
-    if (e.target === modal) modal.style.display = "none";
-  });
-
-  runBtn.addEventListener("click", () => {
-    const selected = Array.from(select.selectedOptions).map((o) => o.value);
-    results.innerHTML = "";
-
-    if (!selected.length) {
-      results.textContent = "Select at least one city to compare.";
-      return;
-    }
-
-    selected.forEach((city) => {
-      const rowsCity = rawRows.filter(
-        (r) => (get(r, COL.city) || "").trim() === city
-      );
-      if (!rowsCity.length) return;
-
-      const metrics = computeCityMetrics(rowsCity);
-      const score = scoreFromMetrics(metrics);
-      const grade = gradeFromScore(score);
-
-      const card = document.createElement("div");
-      card.className = "compare-card";
-
-      const ul = document.createElement("ul");
-      const addLi = (label, value) => {
-        const li = document.createElement("li");
-        li.innerHTML = `<strong>${label}:</strong> ${value}`;
-        ul.appendChild(li);
-      };
-
-      addLi("ADU score", `${score} (${grade})`);
-      addLi(
-        "Max ADUs per lot",
-        metrics.maxADUsAllowed || "not clearly defined"
-      );
-      addLi(
-        "Median min lot size",
-        metrics.medianLot ? `${metrics.medianLot.toLocaleString()} sf` : "n/a"
-      );
-      addLi(
-        "Median height limit",
-        metrics.medianHeight ? `${metrics.medianHeight} ft` : "n/a"
-      );
-      addLi(
-        "Parking flexibility",
-        metrics.avgParkingScore >= 0.8
-          ? "High"
-          : metrics.avgParkingScore >= 0.6
-          ? "Moderate"
-          : "Low"
-      );
-      addLi(
-        "Owner-occupancy",
-        metrics.ownerOccGood
-          ? "No explicit owner-occupancy requirement"
-          : "Owner-occupancy may apply"
-      );
-      addLi(
-        "Alley flexibility",
-        metrics.alleyFlex ? "0 ft alley setback possible for some ADUs" : "Standard setbacks only"
-      );
-      addLi(
-        "Conversion friendliness",
-        metrics.conversionsGood
-          ? "Conversions clearly allowed"
-          : "Limited/unclear conversion support"
-      );
-
-      card.innerHTML = `<h3>${city}</h3>`;
-      card.appendChild(ul);
-      results.appendChild(card);
-    });
-  });
 }
 
 // =========================================
@@ -1814,34 +1393,50 @@ function initCompareModal() {
 // =========================================
 
 async function initApp() {
+  const summary = document.getElementById("summary");
+
+  // 1) Load zoning CSV (required)
   try {
     await loadZoningData();
-    await loadPermitsData();
+  } catch (err) {
+    console.error("Error loading zoning data:", err);
+    if (summary) {
+      summary.textContent =
+        "Error loading zoning data. Check that data.csv exists next to index.html (or update CSV_URL in app.js) and that the file is published.";
+    }
+    renderPermits();
+    return;
+  }
 
+  // 2) Load permits CSV (optional)
+  try {
+    await loadPermitsData();
+  } catch (err) {
+    console.warn("Error loading permits data (non-fatal):", err);
+  }
+
+  // 3) Initialize UI widgets
+  try {
     buildTableHeader();
     renderCityScorecards();
     initFilters();
     applyFilters();
-    initMap();
-    initCompareModal();
     initFeasibility();
 
     if (permitRows.length) {
       initPermitsFilters();
-      applyPermitFilters();
+      filteredPermitRows = permitRows.slice();
+      renderPermits();
     } else {
       renderPermits();
     }
   } catch (err) {
-    console.error(err);
-    const summary = document.getElementById("summary");
-    if (summary) {
+    console.error("Error initializing UI:", err);
+    if (summary && !summary.textContent) {
       summary.textContent =
-        "Error loading data. Check that data.csv (and adu_permits.csv, if used) exist, have proper header rows, and are published correctly.";
+        "Data loaded, but there was an error building the interface. Open the browser console for details.";
     }
-    renderPermits();
   }
 }
 
 document.addEventListener("DOMContentLoaded", initApp);
-
