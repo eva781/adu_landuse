@@ -1,276 +1,255 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>King County ADU / DADU Zoning Explorer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-
-  <link rel="stylesheet" href="styles.css" />
-
-</head>
-<body>
-  <header class="site-header">
-    <div class="header-inner">
-      <div>
-        <h1>King County ADU / DADU Zoning Explorer</h1>
-        <p class="subtitle">
-          Quick zoning and feasibility snapshots for accessory dwelling units across King County municipalities.
+  <head>
+    <meta charset="UTF-8" />
+    <title>King County ADU Explorer</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, shrink-to-fit=no"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="site-header-inner">
+        <h1>King County ADU Explorer</h1>
+        <p class="muted">
+          Compare ADU &amp; DADU regulations across municipalities, test
+          feasibility on a specific lot, and review built ADU permit trends.
         </p>
       </div>
-      <div class="header-actions">
-        <button id="openCompare" class="btn-secondary">Compare cities</button>
-      </div>
-    </div>
-  </header>
+    </header>
 
-  <main class="page-main">
-    <!-- City scorecard -->
-    <section class="scorecard">
-      <h2>City ADU Friendliness Index</h2>
-      <p class="scorecard-help">
-        Composite score by city using ADU count per lot, parking flexibility, setbacks, height limits,
-        owner-occupancy requirements, conversion flexibility, and fees. Higher scores = easier ADU feasibility.
+    <main class="page-main">
+      <!-- City scorecards / overview -->
+      <section class="section">
+        <header class="card-header">
+          <h2>City overview</h2>
+          <p class="muted">
+            Quick snapshot of how each city treats ADUs and DADUs based on your
+            zoning dataset.
+          </p>
+        </header>
+        <div id="cityScorecards" class="city-scorecards"></div>
+      </section>
+
+      <!-- Regulations table + filters -->
+      <section class="section reg-section">
+        <header class="card-header">
+          <h2>ADU / DADU regulations by zone</h2>
+          <p class="muted">
+            Filter the dataset and compare key zoning rules across King County
+            jurisdictions. Use the search to look across all columns.
+          </p>
+        </header>
+
+        <!-- Filters directly above the regulation table -->
+        <div class="reg-controls">
+          <div class="reg-filters">
+            <select id="cityFilter"></select>
+            <select id="zoneFilter"></select>
+            <select id="zoneTypeFilter"></select>
+            <select id="aduFilter"></select>
+            <select id="daduFilter"></select>
+            <select id="ownerOccFilter"></select>
+          </div>
+
+          <div class="reg-search-row">
+            <div class="search-group">
+              <span>Search all fields</span>
+              <input
+                id="searchInput"
+                type="text"
+                placeholder="e.g. R-8 alley, owner occupancy"
+              />
+            </div>
+            <div class="search-group">
+              <button id="clearFilters" type="button">Clear filters</button>
+              <span id="summary"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Regulation table -->
+        <div class="reg-table-wrapper">
+          <table id="dataTable" class="reg-table">
+            <thead id="tableHead"></thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Feasibility checker -->
+      <section class="section feas-section">
+        <header class="card-header">
+          <h2>Lot-level ADU feasibility checker</h2>
+          <p class="muted">
+            Pick a city and zone from the dataset, then plug in a specific lot
+            and target ADU size to see a quick feasibility snapshot and a
+            diagram of the parcel.
+          </p>
+        </header>
+
+        <div class="feas-layout">
+          <!-- Left: inputs -->
+          <div class="feas-panel feas-form">
+            <h3>Inputs</h3>
+
+            <div class="form-row">
+              <label for="feasCity">City</label>
+              <select id="feasCity"></select>
+            </div>
+
+            <div class="form-row">
+              <label for="feasZone">Zone</label>
+              <select id="feasZone"></select>
+            </div>
+
+            <div class="form-row row-inline">
+              <div>
+                <label for="feasLotSize">Lot size (sf)</label>
+                <input
+                  type="number"
+                  id="feasLotSize"
+                  placeholder="e.g. 6,000"
+                  min="0"
+                />
+              </div>
+              <div>
+                <label for="feasLotWidth">Lot width (ft)</label>
+                <input
+                  type="number"
+                  id="feasLotWidth"
+                  placeholder="e.g. 50"
+                  min="0"
+                />
+              </div>
+              <div>
+                <label for="feasLotDepth">Lot depth (ft)</label>
+                <input
+                  type="number"
+                  id="feasLotDepth"
+                  placeholder="e.g. 120"
+                  min="0"
+                />
+              </div>
+            </div>
+
+            <div class="form-row row-inline">
+              <div>
+                <label for="feasHouseWidth">Existing home width (ft)</label>
+                <input
+                  type="number"
+                  id="feasHouseWidth"
+                  placeholder="optional"
+                  min="0"
+                />
+              </div>
+              <div>
+                <label for="feasHouseDepth">Existing home depth (ft)</label>
+                <input
+                  type="number"
+                  id="feasHouseDepth"
+                  placeholder="optional"
+                  min="0"
+                />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <label for="feasADUSize">Target ADU size (sf)</label>
+              <input
+                type="number"
+                id="feasADUSize"
+                placeholder="e.g. 800"
+                min="0"
+              />
+            </div>
+
+            <div class="form-row row-inline check-row">
+              <label>
+                <input type="checkbox" id="feasTransit" />
+                ADU is within transit radius
+              </label>
+              <label>
+                <input type="checkbox" id="feasAlley" />
+                Lot has alley access
+              </label>
+            </div>
+
+            <button id="runFeasibility" type="button" class="primary-btn">
+              Run feasibility check
+            </button>
+          </div>
+
+          <!-- Right: results + diagram -->
+          <div class="feas-panel feas-results">
+            <div class="feas-summary-box">
+              <div id="feasibilitySummary"></div>
+            </div>
+            <div id="feasibilityDetails" class="feas-details"></div>
+
+            <div class="feas-diagram-card">
+              <h3>Parcel diagram</h3>
+              <p class="muted small">
+                Drag and resize the existing home and ADU boxes; lot width and
+                depth can also be adjusted using the green handles. Labels
+                update as the shapes change.
+              </p>
+              <div id="feasDiagram" class="feas-diagram"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Permits / production -->
+      <section class="section permits-section">
+        <header class="card-header">
+          <h2>ADU permits &amp; production</h2>
+          <p class="muted">
+            Historic ADU permit counts by jurisdiction, based on your permits
+            CSV. Use the filters to focus on a specific city or time period.
+          </p>
+        </header>
+
+        <div class="permits-controls">
+          <div class="permits-filters">
+            <select id="permitsCityFilter"></select>
+            <select id="permitsYearFilter"></select>
+          </div>
+          <div class="permits-meta">
+            <button id="permitsClearFilters" type="button">
+              Clear permit filters
+            </button>
+            <span id="permitsSummary"></span>
+          </div>
+        </div>
+
+        <div class="permits-table-wrapper">
+          <table class="permits-table">
+            <thead>
+              <tr>
+                <th>City</th>
+                <th>Year</th>
+                <th>Total ADUs</th>
+                <th>Attached</th>
+                <th>Detached</th>
+                <th>Conversion</th>
+              </tr>
+            </thead>
+            <tbody id="permitsTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p class="muted">
+        Data and diagrams are simplified for feasibility screening and do not
+        replace a detailed code review or conversation with planning staff.
       </p>
-      <div id="cityScorecards" class="scorecard-grid">
-        <!-- Populated by app.js -->
-      </div>
-    </section>
+    </footer>
 
-    <!-- Filters -->
-    <section class="card filters-card">
-      <h2>Filters</h2>
-      <div class="filters-grid">
-        <label>
-          <span>City</span>
-          <select id="cityFilter"></select>
-        </label>
-
-        <label>
-          <span>Zone</span>
-          <select id="zoneFilter"></select>
-        </label>
-
-        <label>
-          <span>Zone type</span>
-          <select id="zoneTypeFilter"></select>
-        </label>
-
-        <label>
-          <span>ADU allowed</span>
-          <select id="aduFilter"></select>
-        </label>
-
-        <label>
-          <span>DADU allowed</span>
-          <select id="daduFilter"></select>
-        </label>
-
-        <label>
-          <span>Owner occupancy</span>
-          <select id="ownerOccFilter"></select>
-        </label>
-
-        <label class="search-label">
-          <span>Keyword search</span>
-          <input
-            id="searchInput"
-            type="text"
-            placeholder="Search notes, height, setbacks, fees, etc."
-          />
-        </label>
-      </div>
-
-      <div class="filters-footer">
-        <button id="clearFilters" class="btn-outline">Clear filters</button>
-        <p id="summary" class="summary-text"></p>
-      </div>
-    </section>
-
-<section class="card map-card">
-  <h2>King County Parcel Viewer</h2>
-  <p class="section-help">
-    Use the official King County Parcel Viewer to look up parcels, zoning, and assessor data.
-    Then plug those details into the ADU feasibility checker on this page.
-  </p>
-
-  <div class="parcel-card">
-    <div class="parcel-card-main">
-      <button
-        class="btn-primary parcel-btn"
-        onclick="window.open('https://gismaps.kingcounty.gov/parcelviewer2/', '_blank')"
-      >
-        Open King County Parcel Viewer
-      </button>
-
-      <ul class="parcel-howto">
-        <li>Search by address or parcel number.</li>
-        <li>Note the zoning designation and parcel area (sq ft).</li>
-        <li>Enter the city, zone, and lot size into the “Lot-level feasibility” tool.</li>
-        <li>Use the code link in the table below to verify specific standards.</li>
-      </ul>
-    </div>
-  </div>
-</section>
-
-
-<section class="card feasibility-card">
-  <h2>Lot-level feasibility check</h2>
-  <p class="section-help">
-    Enter a city, zone, and rough lot dimensions to get a quick read on whether an ADU or DADU is feasible
-    under your current dataset — then see a conceptual layout of the lot, existing home, and ADU envelope.
-    This is informational only, not a zoning decision.
-  </p>
-
-  <div class="feasibility-grid">
-    <label>
-      <span>City</span>
-      <select id="feasCity"></select>
-    </label>
-
-    <label>
-      <span>Zone</span>
-      <select id="feasZone"></select>
-    </label>
-
-    <label>
-      <span>Lot size (sq ft)</span>
-      <input id="feasLotSize" type="number" min="0" placeholder="e.g. 5000" />
-    </label>
-
-    <label>
-      <span>Lot width (ft)</span>
-      <input id="feasLotWidth" type="number" min="0" placeholder="optional, e.g. 40" />
-    </label>
-
-    <label>
-      <span>Lot depth (ft)</span>
-      <input id="feasLotDepth" type="number" min="0" placeholder="optional, e.g. 100" />
-    </label>
-
-    <label>
-      <span>Existing home width (ft)</span>
-      <input id="feasHouseWidth" type="number" min="0" placeholder="e.g. 30" />
-    </label>
-
-    <label>
-      <span>Existing home depth (ft)</span>
-      <input id="feasHouseDepth" type="number" min="0" placeholder="e.g. 40" />
-    </label>
-
-    <label>
-      <span>Target ADU size (sq ft)</span>
-      <input id="feasADUSize" type="number" min="0" placeholder="e.g. 800" />
-    </label>
-
-    <label class="checkbox-label">
-      <input id="feasTransit" type="checkbox" />
-      <span>Within ~0.5 mi of frequent transit</span>
-    </label>
-
-    <label class="checkbox-label">
-      <input id="feasAlley" type="checkbox" />
-      <span>Alley access to rear yard</span>
-    </label>
-  </div>
-
-  <div class="feasibility-actions">
-    <button id="runFeasibility" class="btn-primary">
-      Check feasibility &amp; visualize
-    </button>
-    <p id="feasibilitySummary" class="summary-text"></p>
-  </div>
-
-  <div class="feasibility-layout">
-    <div id="feasDiagram" class="feasibility-canvas">
-      <!-- lot + home + ADU diagram injected here -->
-    </div>
-
-    <div id="feasibilityDetails" class="feasibility-details">
-      <!-- text bullets injected here -->
-    </div>
-  </div>
-</section>
-
-    <!-- ADU activity feed -->
-    <section class="card permits-card">
-      <h2>Recent ADU Permits</h2>
-      <p class="section-help">
-        Recently issued or approved ADU / DADU projects from participating cities. Use this as a reality check on what is
-        actually being built and approved.
-      </p>
-
-      <div class="permits-filters">
-        <label>
-          <span>City</span>
-          <select id="permitsCityFilter"></select>
-        </label>
-        <label>
-          <span>Status</span>
-          <select id="permitsStatusFilter"></select>
-        </label>
-        <label>
-          <span>Show</span>
-          <select id="permitsLimit">
-            <option value="10">10 most recent</option>
-            <option value="25">25 most recent</option>
-            <option value="50">50 most recent</option>
-          </select>
-        </label>
-        <button id="clearPermitsFilters" class="btn-outline">
-          Clear permit filters
-        </button>
-      </div>
-
-      <div id="permitsList" class="permits-list"></div>
-      <p id="permitsSummary" class="summary-text"></p>
-    </section>
-
-    <!-- Table -->
-    <section class="card table-card">
-      <h2>Regulation table</h2>
-      <p class="section-help">
-        All columns from your dataset. Sort and filter in the browser; use the code link to jump to primary sources.
-      </p>
-      <div class="table-wrapper">
-        <table id="resultsTable">
-          <thead id="tableHead"></thead>
-          <tbody id="tableBody"></tbody>
-        </table>
-      </div>
-    </section>
-  </main>
-
-  <!-- Compare cities modal -->
-  <div id="compareModal" class="modal">
-    <div class="modal-content">
-      <button id="closeCompare" class="close" aria-label="Close comparison">
-        ×
-      </button>
-      <h2>City comparison</h2>
-      <p class="modal-intro">
-        Select one or more cities to compare ADU and DADU regulations side by side. This uses your structured dataset.
-      </p>
-
-      <div class="compare-controls">
-        <label>
-          <span>Cities</span>
-          <select id="compareCitySelect" multiple size="6"></select>
-        </label>
-        <button id="runCompare" class="btn-primary">Compare selected</button>
-      </div>
-
-      <div id="compareResults" class="compare-results">
-        <!-- Filled by app.js -->
-      </div>
-    </div>
-  </div>
-
-  <footer class="site-footer">
-    <p>
-      Built for housing consultants and ADU developers. Informational only &mdash; not legal advice. Verify against municipal codes before acting.
-    </p>
-  </footer>
-
-  <script src="app.js"></script>
-</body>
+    <script src="app.js"></script>
+  </body>
 </html>
