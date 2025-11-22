@@ -2,8 +2,8 @@
 // CONFIG & GLOBAL STATE
 // =========================================
 
-const CSV_URL = "data.csv";
-const PERMITS_URL = "adu_permits.csv";
+const CSV_URL = "data.csv";          // zoning CSV, in same folder as index.html
+const PERMITS_URL = "adu_permits.csv"; // permits CSV, optional but expected
 
 let headers = [];
 let rawRows = [];
@@ -51,7 +51,7 @@ const COL = {
   daduSetbackNotes: "DADU_Setback_Notes",
 };
 
-// Column map for permits dataset
+// Column map for permits dataset (aggregated counts)
 const PCOL = {
   city: "City",
   jurisdiction: "Jurisdiction",
@@ -68,6 +68,7 @@ const PCOL = {
 // =========================================
 
 function parseCSV(text) {
+  // Strip BOM if present
   if (text.charCodeAt(0) === 0xfeff) {
     text = text.slice(1);
   }
@@ -123,6 +124,7 @@ async function loadZoningData() {
   const parsed = parseCSV(text);
   if (!parsed.length) throw new Error("Zoning CSV appears to be empty");
 
+  // Find first non-blank row as header
   let headerRowIndex = 0;
   while (
     headerRowIndex < parsed.length &&
@@ -156,7 +158,7 @@ async function loadPermitsData() {
     const text = await res.text();
     const parsed = parseCSV(text);
     if (!parsed.length) {
-      console.warn("Permits CSV appears to be empty; continuing without data.");
+      console.warn("Permits CSV appears to be empty.");
       permitHeaders = [];
       permitRows = [];
       filteredPermitRows = [];
@@ -178,8 +180,7 @@ async function loadPermitsData() {
     }
 
     permitHeaders = parsed[headerRowIndex];
-    const dataRows = parsed.slice(headerRowIndex + 1);
-    permitRows = dataRows.filter((row) =>
+    permitRows = parsed.slice(headerRowIndex + 1).filter((row) =>
       row.some((cell) => cell && cell.trim() !== "")
     );
     filteredPermitRows = permitRows.slice();
@@ -199,24 +200,40 @@ function headerIndex(name) {
   return headers.indexOf(name);
 }
 
-function pHeaderIndex(name) {
+function permitsHeaderIndex(name) {
   return permitHeaders.indexOf(name);
 }
 
-function get(row, colKey) {
-  const idx = headerIndex(colKey);
+function get(row, colKeyOrName) {
+  const name =
+    COL[colKeyOrName] && typeof COL[colKeyOrName] === "string"
+      ? COL[colKeyOrName]
+      : colKeyOrName;
+  const idx = headerIndex(name);
   if (idx === -1) return "";
-  return row[idx] || "";
+  const val = row[idx];
+  return val == null ? "" : String(val).trim();
 }
 
-function getPermit(row, colKey) {
-  const idx = pHeaderIndex(colKey);
+function getPermit(row, colKeyOrName) {
+  const name =
+    PCOL[colKeyOrName] && typeof PCOL[colKeyOrName] === "string"
+      ? PCOL[colKeyOrName]
+      : colKeyOrName;
+  const idx = permitsHeaderIndex(name);
   if (idx === -1) return "";
-  return row[idx] || "";
+  const val = row[idx];
+  return val == null ? "" : String(val).trim();
 }
 
-function uniqueValues(colKey) {
-  const idx = headerIndex(colKey);
+function toNumber(val) {
+  if (val == null || val === "") return null;
+  const n = parseFloat(String(val).replace(/,/g, ""));
+  return isNaN(n) ? null : n;
+}
+
+function uniqueValues(colName) {
+  const idx = headerIndex(colName);
   if (idx === -1) return [];
   const set = new Set();
   rawRows.forEach((row) => {
@@ -226,32 +243,52 @@ function uniqueValues(colKey) {
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
-function toNumber(v) {
-  if (v == null) return null;
-  if (typeof v === "number") return isNaN(v) ? null : v;
-  const num = parseFloat(String(v).replace(/,/g, ""));
-  return isNaN(num) ? null : num;
+function uniquePermitsValues(colName) {
+  const idx = permitsHeaderIndex(colName);
+  if (idx === -1) return [];
+  const set = new Set();
+  permitRows.forEach((row) => {
+    const v = row[idx];
+    if (v && v.trim()) set.add(v.trim());
+  });
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
+// Nicely formatted header labels
+function prettyHeaderLabel(name) {
+  if (!name) return "—";
+  // Replace underscores with spaces, fix case
+  const base = name.replace(/_/g, " ");
+  // Keep ADU/DADU all caps
+  return base
+    .split(" ")
+    .map((word) => {
+      if (/^ADU$/i.test(word)) return "ADU";
+      if (/^DADU$/i.test(word)) return "DADU";
+      if (/^URL$/i.test(word)) return "URL";
+      if (/^ID$/i.test(word)) return "ID";
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(" ");
 }
 
 // =========================================
-// TABLE RENDERING & FILTERS
+// ZONING TABLE RENDERING & FILTERS
 // =========================================
 
 function buildTableHeader() {
   const thead = document.getElementById("tableHead");
   if (!thead) return;
   thead.innerHTML = "";
+
   const tr = document.createElement("tr");
 
-  headers.forEach((h) => {
+  headers.forEach((h, i) => {
     const th = document.createElement("th");
-    th.textContent = h || "—";
+    th.textContent = prettyHeaderLabel(h);
+    th.setAttribute("data-col-index", i);
     tr.appendChild(th);
   });
-
-  const thCode = document.createElement("th");
-  thCode.textContent = "Code link";
-  tr.appendChild(thCode);
 
   thead.appendChild(tr);
 }
@@ -277,12 +314,17 @@ function renderTable() {
       const rawText = cell == null ? "" : String(cell).trim();
       const text = rawText || "—";
 
+      // For responsive styles, label each cell with its header
+      const headerName = headers[i] || "";
+      td.setAttribute("data-label", prettyHeaderLabel(headerName));
+
+      // Make source URL a clickable "Open code" chip
       if (i === urlIdx && rawText) {
         const a = document.createElement("a");
         a.href = rawText;
         a.target = "_blank";
         a.rel = "noopener noreferrer";
-        a.textContent = "Code link";
+        a.textContent = "Open code";
         a.className = "table-link";
         td.appendChild(a);
       } else {
@@ -291,13 +333,6 @@ function renderTable() {
 
       tr.appendChild(td);
     });
-
-    // Extra cell for code link if URL column missing
-    if (urlIdx === -1) {
-      const td = document.createElement("td");
-      td.textContent = "—";
-      tr.appendChild(td);
-    }
 
     tbody.appendChild(tr);
   });
@@ -384,9 +419,7 @@ function initFilters() {
         const el = document.getElementById(id);
         if (el) el.value = "";
       });
-
       if (search) search.value = "";
-
       filteredRows = rawRows.slice();
       renderTable();
     });
@@ -406,120 +439,7 @@ function initFilters() {
 }
 
 // =========================================
-// PERMITS TABLE & FILTERS
-// =========================================
-
-function renderPermits() {
-  const tbody = document.getElementById("permitsTableBody");
-  const summary = document.getElementById("permitsSummary");
-  if (!tbody) return;
-
-  tbody.innerHTML = "";
-
-  if (!filteredPermitRows.length) {
-    if (summary) summary.textContent = "No permit data available.";
-    return;
-  }
-
-  if (summary) {
-    summary.textContent = `${filteredPermitRows.length} permit records shown`;
-  }
-
-  const cityIdx = pHeaderIndex(PCOL.city);
-  const yearIdx = pHeaderIndex(PCOL.year);
-  const totalIdx = pHeaderIndex(PCOL.totalADUs);
-  const attachedIdx = pHeaderIndex(PCOL.attached);
-  const detachedIdx = pHeaderIndex(PCOL.detached);
-  const convIdx = pHeaderIndex(PCOL.conversion);
-
-  filteredPermitRows.forEach((row) => {
-    const tr = document.createElement("tr");
-
-    const cells = [
-      row[cityIdx] || "—",
-      row[yearIdx] || "—",
-      row[totalIdx] || "—",
-      row[attachedIdx] || "—",
-      row[detachedIdx] || "—",
-      row[convIdx] || "—",
-    ];
-
-    cells.forEach((text) => {
-      const td = document.createElement("td");
-      td.textContent = text || "—";
-      tr.appendChild(td);
-    });
-
-    tbody.appendChild(tr);
-  });
-}
-
-function initPermitsFilters() {
-  const cityEl = document.getElementById("permitsCityFilter");
-  const yearEl = document.getElementById("permitsYearFilter");
-  const clearBtn = document.getElementById("permitsClearFilters");
-
-  if (!cityEl || !yearEl) return;
-
-  const cityIdx = pHeaderIndex(PCOL.city);
-  const yearIdx = pHeaderIndex(PCOL.year);
-
-  const citySet = new Set();
-  const yearSet = new Set();
-
-  permitRows.forEach((row) => {
-    if (row[cityIdx]) citySet.add(row[cityIdx]);
-    if (row[yearIdx]) yearSet.add(row[yearIdx]);
-  });
-
-  cityEl.innerHTML = '<option value="">All cities</option>';
-  Array.from(citySet)
-    .sort()
-    .forEach((c) => {
-      const opt = document.createElement("option");
-      opt.value = c;
-      opt.textContent = c;
-      cityEl.appendChild(opt);
-    });
-
-  yearEl.innerHTML = '<option value="">All years</option>';
-  Array.from(yearSet)
-    .sort()
-    .forEach((y) => {
-      const opt = document.createElement("option");
-      opt.value = y;
-      opt.textContent = y;
-      yearEl.appendChild(opt);
-    });
-
-  function applyPermitFilters() {
-    const cityVal = (cityEl.value || "").trim();
-    const yearVal = (yearEl.value || "").trim();
-
-    filteredPermitRows = permitRows.filter((row) => {
-      if (cityVal && row[cityIdx] !== cityVal) return false;
-      if (yearVal && row[yearIdx] !== yearVal) return false;
-      return true;
-    });
-
-    renderPermits();
-  }
-
-  cityEl.addEventListener("change", applyPermitFilters);
-  yearEl.addEventListener("change", applyPermitFilters);
-
-  if (clearBtn) {
-    clearBtn.addEventListener("click", () => {
-      cityEl.value = "";
-      yearEl.value = "";
-      filteredPermitRows = permitRows.slice();
-      renderPermits();
-    });
-  }
-}
-
-// =========================================
-// CITY SCORECARDS (SUMMARY)
+// CITY SCORECARDS
 // =========================================
 
 function renderCityScorecards() {
@@ -650,6 +570,7 @@ function initFeasibility() {
     return;
   }
 
+  // Fill city options
   citySel.innerHTML = "";
   const cities = uniqueValues(COL.city);
   const optBlankCity = document.createElement("option");
@@ -849,6 +770,7 @@ function initFeasibility() {
       );
     }
 
+    // Parking
     let parkingSummary = "";
     if (!parkingReq) {
       parkingSummary =
@@ -1389,54 +1311,151 @@ function initFeasibility() {
 }
 
 // =========================================
+// PERMITS TABLE (USES YOUR HTML IDs)
+// =========================================
+
+function initPermitsFilters() {
+  const cityEl = document.getElementById("permitsCityFilter");
+  const yearEl = document.getElementById("permitsYearFilter");
+  const clearBtn = document.getElementById("permitsClearFilters");
+
+  if (!cityEl || !yearEl || !clearBtn) return;
+  if (!permitRows.length) {
+    renderPermits();
+    return;
+  }
+
+  const cityValues =
+    uniquePermitsValues(PCOL.city) || uniquePermitsValues(PCOL.jurisdiction);
+  const yearValues = uniquePermitsValues(PCOL.year);
+
+  cityEl.innerHTML = '<option value="">All cities</option>';
+  cityValues.forEach((c) => {
+    const opt = document.createElement("option");
+    opt.value = c;
+    opt.textContent = c;
+    cityEl.appendChild(opt);
+  });
+
+  yearEl.innerHTML = '<option value="">All years</option>';
+  yearValues.forEach((y) => {
+    const opt = document.createElement("option");
+    opt.value = y;
+    opt.textContent = y;
+    yearEl.appendChild(opt);
+  });
+
+  function applyPermitFilters() {
+    const cityVal = (cityEl.value || "").trim();
+    const yearVal = (yearEl.value || "").trim();
+
+    const cityIdx =
+      permitsHeaderIndex(PCOL.city) !== -1
+        ? permitsHeaderIndex(PCOL.city)
+        : permitsHeaderIndex(PCOL.jurisdiction);
+    const yearIdx = permitsHeaderIndex(PCOL.year);
+
+    filteredPermitRows = permitRows.filter((row) => {
+      if (cityVal && (!row[cityIdx] || row[cityIdx] !== cityVal)) return false;
+      if (yearVal && (!row[yearIdx] || row[yearIdx] !== yearVal)) return false;
+      return true;
+    });
+
+    renderPermits();
+  }
+
+  cityEl.addEventListener("change", applyPermitFilters);
+  yearEl.addEventListener("change", applyPermitFilters);
+
+  clearBtn.addEventListener("click", () => {
+    cityEl.value = "";
+    yearEl.value = "";
+    filteredPermitRows = permitRows.slice();
+    renderPermits();
+  });
+
+  // Initial render
+  filteredPermitRows = permitRows.slice();
+  renderPermits();
+}
+
+function renderPermits() {
+  const tbody = document.getElementById("permitsTableBody");
+  const summary = document.getElementById("permitsSummary");
+  if (!tbody) return;
+
+  tbody.innerHTML = "";
+
+  if (!permitRows.length) {
+    if (summary) {
+      summary.textContent =
+        "No permit dataset loaded yet. Add adu_permits.csv to see ADU activity.";
+    }
+    return;
+  }
+
+  if (!filteredPermitRows.length) {
+    if (summary) summary.textContent = "No permits match the current filters.";
+    return;
+  }
+
+  if (summary) {
+    summary.textContent = `${filteredPermitRows.length} permit rows shown`;
+  }
+
+  filteredPermitRows.forEach((row) => {
+    const tr = document.createElement("tr");
+
+    const city =
+      getPermit(row, PCOL.city) || getPermit(row, PCOL.jurisdiction) || "—";
+    const year = getPermit(row, PCOL.year) || "—";
+    const total = getPermit(row, PCOL.totalADUs) || "—";
+    const attached = getPermit(row, PCOL.attached) || "—";
+    const detached = getPermit(row, PCOL.detached) || "—";
+    const conversion = getPermit(row, PCOL.conversion) || "—";
+
+    [city, year, total, attached, detached, conversion].forEach((val) => {
+      const td = document.createElement("td");
+      td.textContent = val || "—";
+      tr.appendChild(td);
+    });
+
+    tbody.appendChild(tr);
+  });
+}
+
+// =========================================
 // INIT
 // =========================================
 
 async function initApp() {
   const summary = document.getElementById("summary");
 
-  // 1) Load zoning CSV (required)
   try {
     await loadZoningData();
   } catch (err) {
     console.error("Error loading zoning data:", err);
     if (summary) {
       summary.textContent =
-        "Error loading zoning data. Check that data.csv exists next to index.html (or update CSV_URL in app.js) and that the file is published.";
+        "Error loading zoning data. Check that data.csv exists next to index.html and is published.";
     }
-    renderPermits();
+    // Still try to show permits if available
+    await loadPermitsData();
+    initPermitsFilters();
     return;
   }
 
-  // 2) Load permits CSV (optional)
-  try {
-    await loadPermitsData();
-  } catch (err) {
-    console.warn("Error loading permits data (non-fatal):", err);
-  }
+  // Permits are optional; non-fatal if missing
+  await loadPermitsData();
 
-  // 3) Initialize UI widgets
-  try {
-    buildTableHeader();
-    renderCityScorecards();
-    initFilters();
-    applyFilters();
-    initFeasibility();
-
-    if (permitRows.length) {
-      initPermitsFilters();
-      filteredPermitRows = permitRows.slice();
-      renderPermits();
-    } else {
-      renderPermits();
-    }
-  } catch (err) {
-    console.error("Error initializing UI:", err);
-    if (summary && !summary.textContent) {
-      summary.textContent =
-        "Data loaded, but there was an error building the interface. Open the browser console for details.";
-    }
-  }
+  // Build UI
+  buildTableHeader();
+  renderCityScorecards();
+  initFilters();
+  applyFilters();
+  initFeasibility();
+  initPermitsFilters();
 }
 
 document.addEventListener("DOMContentLoaded", initApp);
+
