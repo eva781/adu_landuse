@@ -2,8 +2,8 @@
 // CONFIG & GLOBAL STATE
 // =========================================
 
-const CSV_URL = "./data.csv";
-const PERMITS_URL = "./adu_permits.csv";
+const CSV_URL = "data.csv";
+const PERMITS_URL = "adu_permits.csv";
 
 let headers = [];
 let rawRows = [];
