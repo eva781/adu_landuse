@@ -193,7 +193,7 @@ async function loadPermitsData() {
 }
 
 // =========================================
-– UTILS
+// UTILS
 // =========================================
 
 function headerIndex(name) {
