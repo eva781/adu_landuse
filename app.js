@@ -431,11 +431,10 @@ function classifyPermitType(row) {
 function initPermitsFilters() {
   const citySelect = document.getElementById("permitsCityFilter");
   const yearSelect = document.getElementById("permitsYearFilter");
-  const clearBtn   = document.getElementById("permitsClearFilters");
+  const clearBtn = document.getElementById("permitsClearFilters");
 
   if (!citySelect || !yearSelect || !clearBtn) {
-    // Table isn't present; nothing to initialise.
-    return;
+    return; // table not present
   }
 
   const citySet = new Set();
@@ -448,7 +447,6 @@ function initPermitsFilters() {
     if (yr) yearSet.add(yr);
   });
 
-  // City dropdown
   citySelect.innerHTML = '<option value="">All cities</option>';
   Array.from(citySet)
     .sort((a, b) => a.localeCompare(b))
@@ -459,7 +457,6 @@ function initPermitsFilters() {
       citySelect.appendChild(opt);
     });
 
-  // Year dropdown
   yearSelect.innerHTML = '<option value="">All years</option>';
   Array.from(yearSet)
     .sort()
@@ -478,39 +475,36 @@ function initPermitsFilters() {
     applyPermitFilters();
   });
 
-  // Initial render
   applyPermitFilters();
 }
 
 function applyPermitFilters() {
-  if (!permitRows.length) {
+  const citySelect = document.getElementById("permitsCityFilter");
+  const yearSelect = document.getElementById("permitsYearFilter");
+
+  if (!citySelect || !yearSelect) {
     filteredPermitRows = [];
     renderPermits();
     return;
   }
 
-  const cityEl = document.getElementById("permitsCityFilter");
-  const yearEl = document.getElementById("permitsYearFilter");
+  const cityVal = (citySelect.value || "").trim();
+  const yearVal = (yearSelect.value || "").trim();
 
-  const cityVal = (cityEl && cityEl.value ? cityEl.value : "").trim();
-  const yearVal = (yearEl && yearEl.value ? yearEl.value : "").trim();
-
-  // Filter row-level permits first
   const filtered = permitRows.filter((row) => {
     const city = (getPermit(row, PCOL.city) || "").trim();
-    const yr   = getPermitYear(row);
+    const yr = getPermitYear(row);
     if (cityVal && city !== cityVal) return false;
     if (yearVal && yr !== yearVal) return false;
     return true;
   });
 
-  // Aggregate to City x Year counts
   const byKey = new Map();
 
   filtered.forEach((row) => {
     const city = (getPermit(row, PCOL.city) || "Unknown").trim();
-    const yr   = getPermitYear(row) || "Unknown";
-    const key  = city + "||" + yr;
+    const yr = getPermitYear(row) || "Unknown";
+    const key = `${city}||${yr}`;
 
     if (!byKey.has(key)) {
       byKey.set(key, {
@@ -523,13 +517,13 @@ function applyPermitFilters() {
       });
     }
 
-    const group = byKey.get(key);
-    group.total += 1;
+    const bucket = byKey.get(key);
+    bucket.total += 1;
 
     const kind = classifyPermitType(row);
-    if (kind === "attached")   group.attached   += 1;
-    else if (kind === "detached")   group.detached   += 1;
-    else if (kind === "conversion") group.conversion += 1;
+    if (kind === "attached") bucket.attached += 1;
+    else if (kind === "detached") bucket.detached += 1;
+    else if (kind === "conversion") bucket.conversion += 1;
   });
 
   filteredPermitRows = Array.from(byKey.values()).sort((a, b) => {
@@ -543,16 +537,15 @@ function applyPermitFilters() {
 }
 
 function renderPermits() {
-  const tbody   = document.getElementById("permitsTableBody");
+  const tbody = document.getElementById("permitsTableBody");
   const summary = document.getElementById("permitsSummary");
-
   if (!tbody || !summary) return;
 
   tbody.innerHTML = "";
 
   if (!permitRows.length) {
     summary.textContent =
-      "No permit dataset loaded yet. Add adu_permits.csv to the repo to see ADU activity.";
+      "No permit dataset loaded yet. Add adu_permits.csv to see ADU activity.";
     return;
   }
 
@@ -561,7 +554,7 @@ function renderPermits() {
     return;
   }
 
-  summary.textContent = filteredPermitRows.length + " row(s) shown.";
+  summary.textContent = `${filteredPermitRows.length} row(s) shown.`;
 
   filteredPermitRows.forEach((g) => {
     const tr = document.createElement("tr");
@@ -569,9 +562,9 @@ function renderPermits() {
     const cells = [
       g.city || "—",
       g.year || "—",
-      g.total      != null ? g.total      : "—",
-      g.attached   != null ? g.attached   : "—",
-      g.detached   != null ? g.detached   : "—",
+      g.total != null ? g.total : "—",
+      g.attached != null ? g.attached : "—",
+      g.detached != null ? g.detached : "—",
       g.conversion != null ? g.conversion : "—",
     ];
 
@@ -585,6 +578,7 @@ function renderPermits() {
     tbody.appendChild(tr);
   });
 }
+
 
 
 // =========================================
