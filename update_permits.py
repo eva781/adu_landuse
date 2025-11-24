@@ -41,7 +41,7 @@ CITY_SOURCES: List[CitySource] = [
     #    https://data.bellevuewa.gov/datasets/befaac91b58e4bca8f9cca811d4200a6_0.csv
     CitySource(
         city_name="Bellevue",
-        url="https://data.bellevuewa.gov/datasets/befaac91b58e4bca8f9cca811d4200a6_0.csv",
+url="https://opendata.arcgis.com/datasets/befaac91b58e4bca8f9cca811d4200a6_0.csv?outSR=4326",
         type="csv",
         format="bellevue_adu",
     ),
