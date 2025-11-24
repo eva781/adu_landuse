@@ -52,17 +52,16 @@ const COL = {
   daduSetbackNotes: "DADU_Setback_Notes",
 };
 
-// Column map for permits dataset
 const PCOL = {
   city: "City",
   jurisdiction: "Jurisdiction",
-  year: "Year",
-  totalADUs: "Total_ADUs",
-  attached: "Attached_ADUs",
-  detached: "Detached_ADUs",
-  conversion: "Conversion_ADUs",
-  notes: "Notes",
+  approvalDate: "Approval_Date",
+  type: "Type",
+  address: "Project_Address",
+  parcel: "Parcel",
+  permit: "Permit_Number",
 };
+
 
 // =========================================
 // SIMPLE CSV PARSER
@@ -411,7 +410,7 @@ function initFilters() {
 
 // Extract a 4-digit year from Approval_Date
 function getPermitYear(row) {
-  const raw = getPermit(row, PCOL.approvalDate);
+const t = (getPermit(row, PCOL.type) || "").toLowerCase();
   if (!raw) return null;
   const match = String(raw).match(/\b(19\d{2}|20\d{2})\b/);
   if (match) return match[1];
