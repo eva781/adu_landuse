@@ -54,14 +54,17 @@ const COL = {
 
 const PCOL = {
   city: "City",
-  jurisdiction: "Jurisdiction",
-  approvalDate: "Approval_Date",
-  type: "Type",
-  address: "Project_Address",
-  parcel: "Parcel",
+  project: "Project_Name",
+  type: "ADU_Type",
+  status: "Status",
   permit: "Permit_Number",
+  parcel: "Parcel",
+  zone: "Zone",
+  size: "ADU_Size_Sqft",
+  approvalDate: "Approval_Date",
+  url: "Source_URL",
+  notes: "Notes",
 };
-
 
 // =========================================
 // SIMPLE CSV PARSER
@@ -410,12 +413,15 @@ function initFilters() {
 
 // Extract a 4-digit year from Approval_Date
 function getPermitYear(row) {
-const t = (getPermit(row, PCOL.type) || "").toLowerCase();
+  const raw = getPermit(row, PCOL.approvalDate);
   if (!raw) return null;
+
   const match = String(raw).match(/\b(19\d{2}|20\d{2})\b/);
   if (match) return match[1];
+
   const d = new Date(raw);
   if (!isNaN(d)) return String(d.getFullYear());
+
   return null;
 }
 
