@@ -406,47 +406,180 @@ function initFilters() {
 }
 
 // =========================================
-// PERMITS TABLE & FILTERS
+// PERMITS FEED (AGGREGATED TABLE)
 // =========================================
 
-function renderPermits() {
-  const tbody = document.getElementById("permitsTableBody");
-  const summary = document.getElementById("permitsSummary");
-  if (!tbody) return;
+// Extract a 4-digit year from Approval_Date
+function getPermitYear(row) {
+  const raw = getPermit(row, PCOL.approvalDate);
+  if (!raw) return null;
+  const match = String(raw).match(/\b(19\d{2}|20\d{2})\b/);
+  if (match) return match[1];
+  const d = new Date(raw);
+  if (!isNaN(d)) return String(d.getFullYear());
+  return null;
+}
 
-  tbody.innerHTML = "";
+// Classify each permit as attached / detached / conversion / other
+function classifyPermitType(row) {
+  const t = (getPermit(row, PCOL.type) || "").toLowerCase();
+  if (t.includes("detach") || t.includes("dadu")) return "detached";
+  if (t.includes("attach") || t.includes("aadu")) return "attached";
+  if (t.includes("convers")) return "conversion";
+  return "other";
+}
 
-  if (!filteredPermitRows.length) {
-    if (summary) summary.textContent = "No permit data available.";
+function initPermitsFilters() {
+  const citySelect = document.getElementById("permitsCityFilter");
+  const yearSelect = document.getElementById("permitsYearFilter");
+  const clearBtn   = document.getElementById("permitsClearFilters");
+
+  if (!citySelect || !yearSelect || !clearBtn) {
+    // Table isn't present; nothing to initialise.
     return;
   }
 
-  if (summary) {
-    summary.textContent = `${filteredPermitRows.length} permit records shown`;
+  const citySet = new Set();
+  const yearSet = new Set();
+
+  permitRows.forEach((row) => {
+    const city = getPermit(row, PCOL.city);
+    if (city) citySet.add(city.trim());
+    const yr = getPermitYear(row);
+    if (yr) yearSet.add(yr);
+  });
+
+  // City dropdown
+  citySelect.innerHTML = '<option value="">All cities</option>';
+  Array.from(citySet)
+    .sort((a, b) => a.localeCompare(b))
+    .forEach((c) => {
+      const opt = document.createElement("option");
+      opt.value = c;
+      opt.textContent = c;
+      citySelect.appendChild(opt);
+    });
+
+  // Year dropdown
+  yearSelect.innerHTML = '<option value="">All years</option>';
+  Array.from(yearSet)
+    .sort()
+    .forEach((y) => {
+      const opt = document.createElement("option");
+      opt.value = y;
+      opt.textContent = y;
+      yearSelect.appendChild(opt);
+    });
+
+  citySelect.addEventListener("change", applyPermitFilters);
+  yearSelect.addEventListener("change", applyPermitFilters);
+  clearBtn.addEventListener("click", () => {
+    citySelect.value = "";
+    yearSelect.value = "";
+    applyPermitFilters();
+  });
+
+  // Initial render
+  applyPermitFilters();
+}
+
+function applyPermitFilters() {
+  if (!permitRows.length) {
+    filteredPermitRows = [];
+    renderPermits();
+    return;
   }
 
-  const cityIdx = pHeaderIndex(PCOL.city);
-  const yearIdx = pHeaderIndex(PCOL.year);
-  const totalIdx = pHeaderIndex(PCOL.totalADUs);
-  const attachedIdx = pHeaderIndex(PCOL.attached);
-  const detachedIdx = pHeaderIndex(PCOL.detached);
-  const convIdx = pHeaderIndex(PCOL.conversion);
+  const cityEl = document.getElementById("permitsCityFilter");
+  const yearEl = document.getElementById("permitsYearFilter");
 
-  filteredPermitRows.forEach((row) => {
+  const cityVal = (cityEl && cityEl.value ? cityEl.value : "").trim();
+  const yearVal = (yearEl && yearEl.value ? yearEl.value : "").trim();
+
+  // Filter row-level permits first
+  const filtered = permitRows.filter((row) => {
+    const city = (getPermit(row, PCOL.city) || "").trim();
+    const yr   = getPermitYear(row);
+    if (cityVal && city !== cityVal) return false;
+    if (yearVal && yr !== yearVal) return false;
+    return true;
+  });
+
+  // Aggregate to City x Year counts
+  const byKey = new Map();
+
+  filtered.forEach((row) => {
+    const city = (getPermit(row, PCOL.city) || "Unknown").trim();
+    const yr   = getPermitYear(row) || "Unknown";
+    const key  = city + "||" + yr;
+
+    if (!byKey.has(key)) {
+      byKey.set(key, {
+        city,
+        year: yr,
+        total: 0,
+        attached: 0,
+        detached: 0,
+        conversion: 0,
+      });
+    }
+
+    const group = byKey.get(key);
+    group.total += 1;
+
+    const kind = classifyPermitType(row);
+    if (kind === "attached")   group.attached   += 1;
+    else if (kind === "detached")   group.detached   += 1;
+    else if (kind === "conversion") group.conversion += 1;
+  });
+
+  filteredPermitRows = Array.from(byKey.values()).sort((a, b) => {
+    if (a.city === b.city) {
+      return String(b.year).localeCompare(String(a.year));
+    }
+    return a.city.localeCompare(b.city);
+  });
+
+  renderPermits();
+}
+
+function renderPermits() {
+  const tbody   = document.getElementById("permitsTableBody");
+  const summary = document.getElementById("permitsSummary");
+
+  if (!tbody || !summary) return;
+
+  tbody.innerHTML = "";
+
+  if (!permitRows.length) {
+    summary.textContent =
+      "No permit dataset loaded yet. Add adu_permits.csv to the repo to see ADU activity.";
+    return;
+  }
+
+  if (!filteredPermitRows.length) {
+    summary.textContent = "No permits match the current filters.";
+    return;
+  }
+
+  summary.textContent = filteredPermitRows.length + " row(s) shown.";
+
+  filteredPermitRows.forEach((g) => {
     const tr = document.createElement("tr");
 
     const cells = [
-      row[cityIdx] || "—",
-      row[yearIdx] || "—",
-      row[totalIdx] || "—",
-      row[attachedIdx] || "—",
-      row[detachedIdx] || "—",
-      row[convIdx] || "—",
+      g.city || "—",
+      g.year || "—",
+      g.total      != null ? g.total      : "—",
+      g.attached   != null ? g.attached   : "—",
+      g.detached   != null ? g.detached   : "—",
+      g.conversion != null ? g.conversion : "—",
     ];
 
-    cells.forEach((text) => {
+    cells.forEach((val) => {
       const td = document.createElement("td");
-      td.textContent = text || "—";
+      td.textContent =
+        val === null || val === undefined ? "—" : String(val);
       tr.appendChild(td);
     });
 
@@ -454,69 +587,6 @@ function renderPermits() {
   });
 }
 
-function initPermitsFilters() {
-  const cityEl = document.getElementById("permitsCityFilter");
-  const yearEl = document.getElementById("permitsYearFilter");
-  const clearBtn = document.getElementById("permitsClearFilters");
-
-  if (!cityEl || !yearEl) return;
-
-  const cityIdx = pHeaderIndex(PCOL.city);
-  const yearIdx = pHeaderIndex(PCOL.year);
-
-  const citySet = new Set();
-  const yearSet = new Set();
-
-  permitRows.forEach((row) => {
-    if (row[cityIdx]) citySet.add(row[cityIdx]);
-    if (row[yearIdx]) yearSet.add(row[yearIdx]);
-  });
-
-  cityEl.innerHTML = '<option value="">All cities</option>';
-  Array.from(citySet)
-    .sort()
-    .forEach((c) => {
-      const opt = document.createElement("option");
-      opt.value = c;
-      opt.textContent = c;
-      cityEl.appendChild(opt);
-    });
-
-  yearEl.innerHTML = '<option value="">All years</option>';
-  Array.from(yearSet)
-    .sort()
-    .forEach((y) => {
-      const opt = document.createElement("option");
-      opt.value = y;
-      opt.textContent = y;
-      yearEl.appendChild(opt);
-    });
-
-  function applyPermitFilters() {
-    const cityVal = (cityEl.value || "").trim();
-    const yearVal = (yearEl.value || "").trim();
-
-    filteredPermitRows = permitRows.filter((row) => {
-      if (cityVal && row[cityIdx] !== cityVal) return false;
-      if (yearVal && row[yearIdx] !== yearVal) return false;
-      return true;
-    });
-
-    renderPermits();
-  }
-
-  cityEl.addEventListener("change", applyPermitFilters);
-  yearEl.addEventListener("change", applyPermitFilters);
-
-  if (clearBtn) {
-    clearBtn.addEventListener("click", () => {
-      cityEl.value = "";
-      yearEl.value = "";
-      filteredPermitRows = permitRows.slice();
-      renderPermits();
-    });
-  }
-}
 
 // =========================================
 // CITY SCORECARDS WITH LETTER GRADES
