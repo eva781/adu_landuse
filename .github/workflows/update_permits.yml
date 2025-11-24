@@ -1,15 +1,12 @@
 name: Update ADU Permits
 
-name: Update ADU Permits
-
 on:
   schedule:
-    - cron: "0 9 * * *"
-  workflow_dispatch:
+    - cron: "0 9 * * *"   # every day at 2AM Pacific (9 UTC)
+  workflow_dispatch:      # allows manual run
 
 permissions:
   contents: write
-
 
 jobs:
   update-permits:
@@ -26,7 +23,7 @@ jobs:
 
       - name: Install requirements
         run: |
-          pip install requests pandas
+          pip install requests
 
       - name: Run permit scraper
         run: |
