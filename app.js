@@ -52,6 +52,7 @@ const COL = {
   daduSetbackNotes: "DADU_Setback_Notes",
 };
 
+// Column map for permits dataset (matches adu_permits.csv)
 const PCOL = {
   city: "City",
   project: "Project_Name",
@@ -65,6 +66,7 @@ const PCOL = {
   url: "Source_URL",
   notes: "Notes",
 };
+
 
 // =========================================
 // SIMPLE CSV PARSER
@@ -408,7 +410,7 @@ function initFilters() {
 }
 
 // =========================================
-// PERMITS FEED (AGGREGATED TABLE)
+// PERMITS FEED (DETAILED TABLE – ONE ROW PER PERMIT)
 // =========================================
 
 // Extract a 4-digit year from Approval_Date
@@ -425,22 +427,14 @@ function getPermitYear(row) {
   return null;
 }
 
-// Classify each permit as attached / detached / conversion / other
-function classifyPermitType(row) {
-  const t = (getPermit(row, PCOL.type) || "").toLowerCase();
-  if (t.includes("detach") || t.includes("dadu")) return "detached";
-  if (t.includes("attach") || t.includes("aadu")) return "attached";
-  if (t.includes("convers")) return "conversion";
-  return "other";
-}
-
 function initPermitsFilters() {
   const citySelect = document.getElementById("permitsCityFilter");
   const yearSelect = document.getElementById("permitsYearFilter");
   const clearBtn = document.getElementById("permitsClearFilters");
 
   if (!citySelect || !yearSelect || !clearBtn) {
-    return; // table not present
+    // Permits table not present in HTML; nothing to wire up.
+    return;
   }
 
   const citySet = new Set();
@@ -449,10 +443,12 @@ function initPermitsFilters() {
   permitRows.forEach((row) => {
     const city = getPermit(row, PCOL.city);
     if (city) citySet.add(city.trim());
+
     const yr = getPermitYear(row);
     if (yr) yearSet.add(yr);
   });
 
+  // City dropdown
   citySelect.innerHTML = '<option value="">All cities</option>';
   Array.from(citySet)
     .sort((a, b) => a.localeCompare(b))
@@ -463,6 +459,7 @@ function initPermitsFilters() {
       citySelect.appendChild(opt);
     });
 
+  // Year dropdown
   yearSelect.innerHTML = '<option value="">All years</option>';
   Array.from(yearSet)
     .sort()
@@ -478,10 +475,10 @@ function initPermitsFilters() {
   clearBtn.addEventListener("click", () => {
     citySelect.value = "";
     yearSelect.value = "";
-    applyPermitFilters();
+    // reset to all
+    filteredPermitRows = permitRows.slice();
+    renderPermits();
   });
-
-  applyPermitFilters();
 }
 
 function applyPermitFilters() {
@@ -497,46 +494,14 @@ function applyPermitFilters() {
   const cityVal = (citySelect.value || "").trim();
   const yearVal = (yearSelect.value || "").trim();
 
-  const filtered = permitRows.filter((row) => {
+  filteredPermitRows = permitRows.filter((row) => {
     const city = (getPermit(row, PCOL.city) || "").trim();
     const yr = getPermitYear(row);
+
     if (cityVal && city !== cityVal) return false;
     if (yearVal && yr !== yearVal) return false;
+
     return true;
-  });
-
-  const byKey = new Map();
-
-  filtered.forEach((row) => {
-    const city = (getPermit(row, PCOL.city) || "Unknown").trim();
-    const yr = getPermitYear(row) || "Unknown";
-    const key = `${city}||${yr}`;
-
-    if (!byKey.has(key)) {
-      byKey.set(key, {
-        city,
-        year: yr,
-        total: 0,
-        attached: 0,
-        detached: 0,
-        conversion: 0,
-      });
-    }
-
-    const bucket = byKey.get(key);
-    bucket.total += 1;
-
-    const kind = classifyPermitType(row);
-    if (kind === "attached") bucket.attached += 1;
-    else if (kind === "detached") bucket.detached += 1;
-    else if (kind === "conversion") bucket.conversion += 1;
-  });
-
-  filteredPermitRows = Array.from(byKey.values()).sort((a, b) => {
-    if (a.city === b.city) {
-      return String(b.year).localeCompare(String(a.year));
-    }
-    return a.city.localeCompare(b.city);
   });
 
   renderPermits();
@@ -545,47 +510,76 @@ function applyPermitFilters() {
 function renderPermits() {
   const tbody = document.getElementById("permitsTableBody");
   const summary = document.getElementById("permitsSummary");
+
   if (!tbody || !summary) return;
 
   tbody.innerHTML = "";
 
   if (!permitRows.length) {
     summary.textContent =
-      "No permit dataset loaded yet. Add adu_permits.csv to see ADU activity.";
+      "No permit dataset loaded yet. Add adu_permits.csv next to index.html to see permits.";
     return;
   }
 
-  if (!filteredPermitRows.length) {
+  const rowsToShow =
+    filteredPermitRows && filteredPermitRows.length
+      ? filteredPermitRows
+      : permitRows;
+
+  if (!rowsToShow.length) {
     summary.textContent = "No permits match the current filters.";
     return;
   }
 
-  summary.textContent = `${filteredPermitRows.length} row(s) shown.`;
+  summary.textContent = `${rowsToShow.length} permit(s) shown.`;
 
-  filteredPermitRows.forEach((g) => {
+  rowsToShow.forEach((row) => {
     const tr = document.createElement("tr");
 
-    const cells = [
-      g.city || "—",
-      g.year || "—",
-      g.total != null ? g.total : "—",
-      g.attached != null ? g.attached : "—",
-      g.detached != null ? g.detached : "—",
-      g.conversion != null ? g.conversion : "—",
-    ];
+    const city = getPermit(row, PCOL.city);
+    const project = getPermit(row, PCOL.project);
+    const type = getPermit(row, PCOL.type);
+    const status = getPermit(row, PCOL.status);
+    const size = getPermit(row, PCOL.size);
+    const zone = getPermit(row, PCOL.zone);
+    const date = getPermit(row, PCOL.approvalDate);
+    const permitNo = getPermit(row, PCOL.permit);
+    const parcel = getPermit(row, PCOL.parcel);
+    const url = getPermit(row, PCOL.url);
 
-    cells.forEach((val) => {
+    function cell(value) {
       const td = document.createElement("td");
-      td.textContent =
-        val === null || val === undefined ? "—" : String(val);
+      td.textContent = value && value !== "" ? value : "—";
       tr.appendChild(td);
-    });
+    }
+
+    // Adjust this order to match your <thead> columns
+    cell(city);
+    cell(project);
+    cell(type);
+    cell(status);
+    cell(size);
+    cell(zone);
+    cell(date);
+    cell(permitNo);
+    cell(parcel);
+
+    const tdLink = document.createElement("td");
+    if (url) {
+      const a = document.createElement("a");
+      a.href = url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.textContent = "Open";
+      tdLink.appendChild(a);
+    } else {
+      tdLink.textContent = "—";
+    }
+    tr.appendChild(tdLink);
 
     tbody.appendChild(tr);
   });
 }
-
-
 
 // =========================================
 // CITY SCORECARDS WITH LETTER GRADES
