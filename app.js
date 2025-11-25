@@ -525,14 +525,29 @@ function renderPermits() {
     return;
   }
 
-  const rowsToShow =
+  // Base set: either the filtered subset or all permits
+  const baseRows =
     filteredPermitRows && filteredPermitRows.length
       ? filteredPermitRows
       : permitRows;
 
+  // Drop cancelled / canceled permits
+  const rowsToShow = baseRows.filter((row) => {
+    const status = (getPermit(row, PCOL.status) || "").trim().toLowerCase();
+    return !status.startsWith("cancel");
+  });
+
   if (!rowsToShow.length) {
     summary.textContent = "No permits match the current filters.";
     return;
+  }
+
+  summary.textContent = `${rowsToShow.length} permit(s) shown.`;
+
+  rowsToShow.forEach((row) => {
+    // build <tr>…
+  });
+
   }
 
   summary.textContent = `${rowsToShow.length} permit(s) shown.`;
