@@ -2,63 +2,26 @@
 """
 update_permits.py
 
-Fetches ADU permit data from one or more public endpoints
-and writes a unified adu_permits.csv file in the repo root.
-
-Right now this uses:
-- City of Bellevue's official "Accessory Dwelling Unit (ADU) Permits Data"
-  dataset as a live CSV feed.
-
-You can add more cities later (e.g., Shoreline) by wiring in additional
-sources below.
+Fetch Bellevue ADU permits from the official ArcGIS FeatureServer endpoint,
+normalize into a unified schema, drop cancelled permits, and write
+adu_permits.csv in the repo root.
 """
 
 import csv
 import datetime as dt
-import io
 import sys
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 import requests
 
-# -----------------------------------------------------------------------------
-# CONFIG – data sources
-# -----------------------------------------------------------------------------
 
-@dataclass
-class CitySource:
-    city_name: str   # How we label the city in output
-    url: str         # Endpoint URL (CSV or JSON)
-    type: str        # "csv" or "json"
-    format: str      # "bellevue_adu" | "generic_csv" | etc.
+# -----------------------------
+# CONFIG
+# -----------------------------
 
+OUTPUT_CSV = "adu_permits.csv"
 
-CITY_SOURCES: List[CitySource] = [
-    # 1) BELLEVUE: official ADU permit dataset, refreshed daily on Open Data
-    #    Dataset: "Bellevue Accessory Dwelling Unit (ADU) Permits Data"
-    #    CSV download endpoint:
-    #    https://data.bellevuewa.gov/datasets/befaac91b58e4bca8f9cca811d4200a6_0.csv
-    CitySource(
-      CitySource(
-    city_name="Bellevue",
-    url="https://services.arcgis.com/9YgDo7Ef8pPKUwMb/ArcGIS/rest/services/Accessory_Dwelling_Unit_ADU_Permits/FeatureServer/0/query?where=1%3D1&outFields=*&f=json",
-    type="arcgis_json",
-    format="bellevue_arcgis",
-),
-
-    ),
-
-    # 2) Example hook for Shoreline (you can add later):
-    # CitySource(
-    #     city_name="Shoreline",
-    #     url="https://raw.githubusercontent.com/YOUR_USER/YOUR_REPO/main/shoreline_adu_permits.csv",
-    #     type="csv",
-    #     format="generic_csv",
-    # ),
-]
-
-# These are the columns your frontend already expects:
 OUTPUT_FIELDNAMES = [
     "City",
     "Project_Name",
@@ -73,298 +36,217 @@ OUTPUT_FIELDNAMES = [
     "Notes",
 ]
 
-# -----------------------------------------------------------------------------
-# LOW-LEVEL HELPERS
-# -----------------------------------------------------------------------------
 
-def fetch_text(url: str) -> Optional[str]:
-    try:
-        resp = requests.get(url, timeout=45)
-        if resp.status_code != 200:
-            print(f"[WARN] {url} returned {resp.status_code}", file=sys.stderr)
-            return None
-        return resp.text
-    except Exception as e:
-        print(f"[ERROR] fetch_text({url}): {e}", file=sys.stderr)
-        return None
+@dataclass
+class CitySource:
+    city_name: str
+    url: str
+    type: str          # "arcgis_json", could add "csv" later
+    format: str        # which normalizer to use
 
 
-def parse_csv_text(text: str) -> List[Dict[str, str]]:
-    rows: List[Dict[str, str]] = []
-    f = io.StringIO(text)
-    reader = csv.DictReader(f)
-    for row in reader:
-        norm = {
-            (k or "").strip(): (v or "").strip()
-            for k, v in row.items()
-            if k is not None
-        }
-        rows.append(norm)
-    return rows
+CITY_SOURCES: List[CitySource] = [
+    CitySource(
+        city_name="Bellevue",
+        # ArcGIS FeatureServer layer for ADU permits
+        url=(
+            "https://services.arcgis.com/9YgDo7Ef8pPKUwMb/ArcGIS/rest/services/"
+            "Accessory_Dwelling_Unit_ADU_Permits/FeatureServer/0/query"
+            "?where=1%3D1&outFields=*&f=json"
+        ),
+        type="arcgis_json",
+        format="bellevue_arcgis",
+    ),
+]
 
 
-# -----------------------------------------------------------------------------
+# -----------------------------
 # NORMALIZERS
-# -----------------------------------------------------------------------------
+# -----------------------------
 
-def normalize_bellevue_adu(raw: Dict[str, Any]) -> Dict[str, str]:
+
+def normalize_bellevue_arcgis(feature: Dict[str, Any]) -> Dict[str, str]:
     """
-    Map Bellevue's ADU Permits Data row into OUTPUT_FIELDNAMES.
-
-    According to the dataset, typical fields include:
-    - CITY
-    - STATE
-    - ZIP CODE
-    - PERMIT STATUS
-    - PARCEL NUMBER
-    - PERMIT YEAR
-    - PERMIT SEQUENCE
-    - PROJECT NAME
-    - ADDRESS
-    - LINK or PERMIT URL (may appear as a URL field)
-    plus others.
-
-    We'll be conservative and only use what we can reasonably infer.
+    Normalize a single ArcGIS feature from Bellevue's ADU permits layer
+    into our unified OUTPUT_FIELDNAMES schema.
     """
+    attrs = feature.get("attributes", {}) or {}
 
-    # Start with blanks
-    out = {k: "" for k in OUTPUT_FIELDNAMES}
+    def get_attr(key: str) -> str:
+        val = attrs.get(key)
+        return "" if val is None else str(val).strip()
 
-    # City label for your app
-    out["City"] = "Bellevue"
+    # Approval date often stored as epoch milliseconds in ArcGIS
+    approval_raw = attrs.get("ApprovalDate") or attrs.get("Approval_Date")
+    approval_iso: str = ""
+    if isinstance(approval_raw, (int, float)):
+        try:
+            # ArcGIS uses milliseconds since epoch
+            approval_iso = dt.datetime.utcfromtimestamp(
+                approval_raw / 1000.0
+            ).date().isoformat()
+        except Exception:
+            approval_iso = ""
+    elif isinstance(approval_raw, str):
+        # If already string, best effort
+        try:
+            approval_iso = dt.date.fromisoformat(approval_raw[:10]).isoformat()
+        except Exception:
+            approval_iso = approval_raw.strip()
 
-    # Project name
-    project_name = (
-        raw.get("PROJECT NAME")
-        or raw.get("Project Name")
-        or raw.get("PROJECT_NAME")
-        or ""
-    ).strip()
-    if not project_name:
-        project_name = "ADU project"
-    out["Project_Name"] = project_name
-
-    # ADU type – we don't get explicit DADU/AADU from this dataset,
-    # so we classify very roughly from project name and any type-ish fields.
-    text_all = " ".join([project_name, (raw.get("PERMIT TYPE") or "")]).upper()
-    if "DETACHED" in text_all or "DADU" in text_all or "BACKYARD" in text_all:
-        adu_type = "Detached ADU"
-    elif "CONVERSION" in text_all or "GARAGE" in text_all:
-        adu_type = "Conversion ADU"
-    else:
-        adu_type = "Attached/Unknown ADU"
-    out["ADU_Type"] = adu_type
-
-    # Status
-    status = (
-        raw.get("PERMIT STATUS")
-        or raw.get("Permit Status")
-        or raw.get("STATUS")
-        or ""
-    ).strip()
-    out["Status"] = status
-
-    # Permit number: often composed of year + sequence, but dataset may have a field
-    permit_number = (
-        raw.get("PERMIT NUMBER")
-        or raw.get("Permit Number")
-        or raw.get("PERMITNUMBER")
-        or ""
-    ).strip()
-
-    if not permit_number:
-        # Fallback: combine PERMIT YEAR + PERMIT SEQUENCE if present
-        year = (raw.get("PERMIT YEAR") or "").strip()
-        seq = (raw.get("PERMIT SEQUENCE") or "").strip()
-        if year or seq:
-            permit_number = f"{year}-{seq}".strip("-")
-
-    out["Permit_Number"] = permit_number
-
-    # Parcel number
-    parcel = (
-        raw.get("PARCEL NUMBER")
-        or raw.get("Parcel Number")
-        or raw.get("PARCEL")
-        or ""
-    ).strip()
-    out["Parcel"] = parcel
-
-    # Zoning is NOT part of this dataset; leave blank for now.
-    out["Zone"] = ""
-
-    # ADU size is not in this dataset either; leave blank
-    out["ADU_Size_Sqft"] = ""
-
-    # Approval date: usually "ISSUE DATE" or similar
-    date_fields = [
-        "ISSUE DATE",
-        "Issue Date",
-        "APPROVAL DATE",
-        "Approval Date",
-    ]
-    approval_date = ""
-    for f_name in date_fields:
-        if f_name in raw and raw[f_name].strip():
-            approval_date = raw[f_name].strip().split("T")[0]
-            break
-    out["Approval_Date"] = approval_date
-
-    # Source URL – look for anything that looks like a link
+    # Some typical field names in Bellevue's layer; adjust if needed
+    project_name = get_attr("ProjectName") or get_attr("PROJECT_NAME")
+    adu_type = get_attr("ADUType") or get_attr("ADU_TYPE")
+    status = get_attr("Status") or get_attr("PERMIT_STATUS")
+    permit_no = get_attr("PermitNumber") or get_attr("PERMIT_NUMBER")
+    parcel = get_attr("ParcelNumber") or get_attr("PARCEL")
+    zone = get_attr("Zoning") or get_attr("ZONE")
+    size_sqft = get_attr("ADUSizeSqft") or get_attr("ADU_SIZE_SQFT")
     source_url = (
-        raw.get("LINK")
-        or raw.get("Link")
-        or raw.get("URL")
-        or raw.get("PERMIT URL")
-        or ""
-    ).strip()
-    out["Source_URL"] = source_url
+        get_attr("DetailPageURL")
+        or get_attr("URL")
+        or get_attr("LINK")
+    )
+    notes = get_attr("Notes")
 
-    # Notes field – we can assemble a compact summary
-    notes_parts = []
-
-    address = (raw.get("ADDRESS") or raw.get("Address") or "").strip()
-    if address:
-        notes_parts.append(f"Address: {address}")
-
-    zip_code = (
-        raw.get("ZIP CODE")
-        or raw.get("ZIP")
-        or raw.get("Zip Code")
-        or ""
-    ).strip()
-    if zip_code:
-        notes_parts.append(f"ZIP: {zip_code}")
-
-    permit_year = (raw.get("PERMIT YEAR") or "").strip()
-    if permit_year:
-        notes_parts.append(f"Permit year: {permit_year}")
-
-    if parcel:
-        notes_parts.append(f"Parcel: {parcel}")
-
-    if status:
-        notes_parts.append(f"Status: {status}")
-
-    out["Notes"] = " | ".join(notes_parts)
-
-    return out
-
-def normalize_bellevue_arcgis(raw):
-    attrs = raw.get("attributes", {})
     return {
         "City": "Bellevue",
-        "Project_Name": attrs.get("ProjectName") or "",
-        "ADU_Type": attrs.get("ADUType") or "",
-        "Status": attrs.get("Status") or "",
-        "Permit_Number": attrs.get("PermitNumber") or "",
-        "Parcel": attrs.get("ParcelNumber") or "",
-        "Zone": attrs.get("Zoning") or "",
-        "ADU_Size_Sqft": attrs.get("ADUSizeSqft") or "",
-        "Approval_Date": attrs.get("ApprovalDate") or "",
-        "Source_URL": attrs.get("DetailPageURL") or "",
-        "Notes": attrs.get("Notes") or "",
+        "Project_Name": project_name,
+        "ADU_Type": adu_type,
+        "Status": status,
+        "Permit_Number": permit_no,
+        "Parcel": parcel,
+        "Zone": zone,
+        "ADU_Size_Sqft": size_sqft,
+        "Approval_Date": approval_iso,
+        "Source_URL": source_url,
+        "Notes": notes,
     }
 
-def normalize_generic_csv(city_name: str, raw: Dict[str, Any]) -> Dict[str, str]:
-    """
-    Fallback for future manually-maintained CSV sources (e.g. Shoreline).
 
-    Assumes columns are reasonably close to our OUTPUT_FIELDNAMES.
-    """
-    out = {k: "" for k in OUTPUT_FIELDNAMES}
-    out["City"] = city_name
-
-    mapping_candidates = {
-        "Project_Name": ["Project_Name", "PROJECT NAME", "Project", "Description"],
-        "ADU_Type": ["ADU_Type", "Type"],
-        "Status": ["Status", "PERMIT STATUS"],
-        "Permit_Number": ["Permit_Number", "PERMIT NUMBER", "Permit #"],
-        "Parcel": ["Parcel", "PARCEL NUMBER"],
-        "Zone": ["Zone", "Zoning"],
-        "ADU_Size_Sqft": ["ADU_Size_Sqft", "Size", "Square Feet"],
-        "Approval_Date": ["Approval_Date", "ISSUE DATE", "Issue Date", "Date"],
-        "Source_URL": ["Source_URL", "Link", "URL"],
-        "Notes": ["Notes", "Comments"],
-    }
-
-    for out_field, candidates in mapping_candidates.items():
-        for cand in candidates:
-            if cand in raw and raw[cand]:
-                out[out_field] = str(raw[cand]).strip()
-                break
-
-    return out
+# Map format name -> normalizer function
+NORMALIZERS = {
+    "bellevue_arcgis": normalize_bellevue_arcgis,
+}
 
 
-# -----------------------------------------------------------------------------
-# MAIN
-# -----------------------------------------------------------------------------
+# -----------------------------
+# MAIN FETCH / WRITE LOGIC
+# -----------------------------
 
-def main() -> int:
+
+def fetch_all_cities() -> List[Dict[str, str]]:
     all_rows: List[Dict[str, str]] = []
 
     for src in CITY_SOURCES:
-        print(f"[INFO] Fetching {src.city_name} from {src.url}", file=sys.stderr)
+        print(f"[INFO] Fetching {src.city_name} from {src.url}")
 
-        if src.type == "csv":
-            text = fetch_text(src.url)
-            if not text:
-                print(f"[WARN] No CSV data for {src.city_name}", file=sys.stderr)
-                continue
-
-            parsed = parse_csv_text(text)
-
-            if src.format == "bellevue_adu":
-                for raw in parsed:
-                    row = normalize_bellevue_adu(raw)
-                    all_rows.append(row)
-            elif src.format == "generic_csv":
-                for raw in parsed:
-                    row = normalize_generic_csv(src.city_name, raw)
-                    all_rows.append(row)
-            else:
-                print(f"[WARN] Unsupported CSV format {src.format} for {src.city_name}", file=sys.stderr)
-                continue
-
-        else:
-            print(f"[WARN] Unsupported source type {src.type} for {src.city_name}", file=sys.stderr)
+        try:
+            resp = requests.get(src.url, timeout=60)
+        except Exception as e:
+            print(f"[WARN] Request error for {src.city_name}: {e}", file=sys.stderr)
             continue
-          
-    if not all_rows:
-        print("[WARN] No rows collected; keeping existing adu_permits.csv (if any).", file=sys.stderr)
-        return 0
 
-    # Filter out cancelled permits
-    filtered_rows = []
-    for row in all_rows:
+        if resp.status_code != 200:
+            print(
+                f"[WARN] {src.url} returned {resp.status_code} "
+                f"for {src.city_name}",
+                file=sys.stderr,
+            )
+            continue
+
+        out_rows: List[Dict[str, str]] = []
+
+        if src.type == "arcgis_json":
+            try:
+                data = resp.json()
+            except Exception as e:
+                print(
+                    f"[WARN] Failed to parse JSON for {src.city_name}: {e}",
+                    file=sys.stderr,
+                )
+                continue
+
+            features = data.get("features", [])
+            normalizer = NORMALIZERS.get(src.format)
+            if not normalizer:
+                print(
+                    f"[WARN] No normalizer for format {src.format}",
+                    file=sys.stderr,
+                )
+                continue
+
+            for feat in features:
+                out = normalizer(feat)
+                out_rows.append(out)
+        else:
+            print(
+                f"[WARN] Unsupported source type {src.type} for {src.city_name}",
+                file=sys.stderr,
+            )
+            continue
+
+        print(f"[INFO] {src.city_name}: collected {len(out_rows)} rows")
+        all_rows.extend(out_rows)
+
+    return all_rows
+
+
+def filter_and_sort_rows(rows: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    if not rows:
+        return []
+
+    # Drop cancelled/canceled permits
+    filtered: List[Dict[str, str]] = []
+    for row in rows:
         status = (row.get("Status") or "").strip().lower()
-        # Skip anything that looks cancelled / canceled
         if status.startswith("cancel"):
             continue
-        filtered_rows.append(row)
-    all_rows = filtered_rows
+        filtered.append(row)
 
-    # Sort by Approval_Date descending
+    # Sort by approval date desc
     def parse_date(s: str) -> dt.date:
         try:
-            return dt.datetime.fromisoformat(s).date()
+            return dt.datetime.fromisoformat(s[:10]).date()
         except Exception:
             return dt.date(1970, 1, 1)
 
-    all_rows.sort(key=lambda r: parse_date(r.get("Approval_Date", "")), reverse=True)
+    filtered.sort(
+        key=lambda r: parse_date(r.get("Approval_Date", "")),
+        reverse=True,
+    )
+
+    return filtered
 
 
-    out_path = "adu_permits.csv"
-    print(f"[INFO] Writing {len(all_rows)} rows to {out_path}", file=sys.stderr)
+def write_csv(rows: List[Dict[str, str]], path: str = OUTPUT_CSV) -> None:
+    if not rows:
+        print(
+            "[WARN] No rows to write; not overwriting existing adu_permits.csv",
+            file=sys.stderr,
+        )
+        return
 
-    with open(out_path, "w", newline="", encoding="utf-8") as f:
+    with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=OUTPUT_FIELDNAMES)
         writer.writeheader()
-        for row in all_rows:
+        for row in rows:
             writer.writerow(row)
 
-    print("[INFO] Done.", file=sys.stderr)
+    print(f"[INFO] Wrote {len(rows)} rows to {path}")
+
+
+def main() -> int:
+    rows = fetch_all_cities()
+    if not rows:
+        print(
+            "[WARN] No rows collected; keeping existing adu_permits.csv (if any).",
+            file=sys.stderr,
+        )
+        return 0
+
+    cleaned = filter_and_sort_rows(rows)
+    write_csv(cleaned, OUTPUT_CSV)
     return 0
 
 
