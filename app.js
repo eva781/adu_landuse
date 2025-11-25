@@ -408,6 +408,106 @@ function initFilters() {
     if (el) el.addEventListener("change", applyFilters);
   });
 }
+
+// =========================================
+// CITY SCORECARDS (LETTER GRADES)
+// =========================================
+
+function renderCityScorecards() {
+  const container = document.getElementById("cityScorecards");
+  if (!container) return;
+
+  container.innerHTML = "";
+
+  if (!rawRows.length) {
+    return;
+  }
+
+  const cityIdx = headerIndex(COL.city);
+  if (cityIdx === -1) return;
+
+  const aduIdx = headerIndex(COL.aduAllowed);
+  const daduIdx = headerIndex(COL.daduAllowed);
+
+  const statsByCity = new Map();
+
+  rawRows.forEach((row) => {
+    const city = (row[cityIdx] || "").trim();
+    if (!city) return;
+
+    if (!statsByCity.has(city)) {
+      statsByCity.set(city, {
+        count: 0,
+        aduYes: 0,
+        daduYes: 0,
+      });
+    }
+    const stats = statsByCity.get(city);
+    stats.count++;
+
+    const aduVal = ((aduIdx !== -1 ? row[aduIdx] : "") || "")
+      .toString()
+      .toLowerCase();
+    const daduVal = ((daduIdx !== -1 ? row[daduIdx] : "") || "")
+      .toString()
+      .toLowerCase();
+
+    if (aduVal === "yes" || aduVal === "y" || aduVal === "true") {
+      stats.aduYes++;
+    }
+    if (daduVal === "yes" || daduVal === "y" || daduVal === "true") {
+      stats.daduYes++;
+    }
+  });
+
+  const frag = document.createDocumentFragment();
+
+  const entries = Array.from(statsByCity.entries()).sort((a, b) =>
+    a[0].localeCompare(b[0])
+  );
+
+  entries.forEach(([city, stats]) => {
+    const aduRatio = stats.count ? stats.aduYes / stats.count : 0;
+    const daduRatio = stats.count ? stats.daduYes / stats.count : 0;
+    const combined = (aduRatio + daduRatio) / 2;
+
+    let grade = "C";
+    if (combined >= 0.9) grade = "A+";
+    else if (combined >= 0.75) grade = "A";
+    else if (combined >= 0.6) grade = "B+";
+    else if (combined >= 0.45) grade = "B";
+    else if (combined >= 0.3) grade = "C+";
+    else grade = "C";
+
+    const card = document.createElement("div");
+    card.className = "city-card";
+
+    const title = document.createElement("h3");
+    title.textContent = city;
+
+    const meta = document.createElement("p");
+    meta.className = "muted small";
+    meta.textContent = `${stats.count} zoning row${stats.count === 1 ? "" : "s"} in dataset`;
+
+    const aduLine = document.createElement("p");
+    aduLine.className = "muted small";
+    aduLine.textContent = `ADUs allowed in ${stats.aduYes} zone${stats.aduYes === 1 ? "" : "s"}, DADUs allowed in ${stats.daduYes} zone${stats.daduYes === 1 ? "" : "s"}.`;
+
+    const gradeBadge = document.createElement("div");
+    gradeBadge.className = "grade-pill";
+    gradeBadge.textContent = grade;
+
+    card.appendChild(title);
+    card.appendChild(meta);
+    card.appendChild(aduLine);
+    card.appendChild(gradeBadge);
+
+    frag.appendChild(card);
+  });
+
+  container.appendChild(frag);
+}
+
 // =========================================
 // PERMITS FEED (DETAILED TABLE)
 // =========================================
@@ -544,7 +644,6 @@ function renderPermits() {
     const tr = document.createElement("tr");
 
     const city     = getPermit(row, PCOL.city);
-    const year     = getPermitYear(row);
     const project  = getPermit(row, PCOL.project);
     const type     = getPermit(row, PCOL.type);
     const status   = getPermit(row, PCOL.status);
@@ -561,9 +660,8 @@ function renderPermits() {
       tr.appendChild(td);
     }
 
-    // Match your <thead> columns
+    // Match your <thead> columns in index.html
     addCell(city);
-    addCell(year || "—");
     addCell(project);
     addCell(type);
     addCell(status);
