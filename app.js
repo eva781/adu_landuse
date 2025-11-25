@@ -430,7 +430,7 @@ function getPermitYear(row) {
 function initPermitsFilters() {
   const citySelect = document.getElementById("permitsCityFilter");
   const yearSelect = document.getElementById("permitsYearFilter");
-  const clearBtn = document.getElementById("permitsClearFilters");
+  const clearBtn   = document.getElementById("permitsClearFilters");
 
   if (!citySelect || !yearSelect || !clearBtn) {
     // Permits table not present in HTML; nothing to wire up.
@@ -472,13 +472,17 @@ function initPermitsFilters() {
 
   citySelect.addEventListener("change", applyPermitFilters);
   yearSelect.addEventListener("change", applyPermitFilters);
+
   clearBtn.addEventListener("click", () => {
     citySelect.value = "";
     yearSelect.value = "";
-    // reset to all
     filteredPermitRows = permitRows.slice();
     renderPermits();
   });
+
+  // Initial state: show all permits
+  filteredPermitRows = permitRows.slice();
+  renderPermits();
 }
 
 function applyPermitFilters() {
@@ -496,7 +500,7 @@ function applyPermitFilters() {
 
   filteredPermitRows = permitRows.filter((row) => {
     const city = (getPermit(row, PCOL.city) || "").trim();
-    const yr = getPermitYear(row);
+    const yr   = getPermitYear(row);
 
     if (cityVal && city !== cityVal) return false;
     if (yearVal && yr !== yearVal) return false;
@@ -508,7 +512,7 @@ function applyPermitFilters() {
 }
 
 function renderPermits() {
-  const tbody = document.getElementById("permitsTableBody");
+  const tbody   = document.getElementById("permitsTableBody");
   const summary = document.getElementById("permitsSummary");
 
   if (!tbody || !summary) return;
@@ -536,25 +540,27 @@ function renderPermits() {
   rowsToShow.forEach((row) => {
     const tr = document.createElement("tr");
 
-    const city = getPermit(row, PCOL.city);
-    const project = getPermit(row, PCOL.project);
-    const type = getPermit(row, PCOL.type);
-    const status = getPermit(row, PCOL.status);
-    const size = getPermit(row, PCOL.size);
-    const zone = getPermit(row, PCOL.zone);
-    const date = getPermit(row, PCOL.approvalDate);
-    const permitNo = getPermit(row, PCOL.permit);
-    const parcel = getPermit(row, PCOL.parcel);
-    const url = getPermit(row, PCOL.url);
+    const city      = getPermit(row, PCOL.city);
+    const year      = getPermitYear(row);
+    const project   = getPermit(row, PCOL.project);
+    const type      = getPermit(row, PCOL.type);
+    const status    = getPermit(row, PCOL.status);
+    const size      = getPermit(row, PCOL.size);
+    const zone      = getPermit(row, PCOL.zone);
+    const date      = getPermit(row, PCOL.approvalDate);
+    const permitNo  = getPermit(row, PCOL.permitNumber);
+    const parcel    = getPermit(row, PCOL.parcel);
+    const url       = getPermit(row, PCOL.url);
 
-    function cell(value) {
+    function cell(text) {
       const td = document.createElement("td");
-      td.textContent = value && value !== "" ? value : "—";
+      td.textContent = text && text !== "" ? text : "—";
       tr.appendChild(td);
     }
 
-    // Adjust this order to match your <thead> columns
+    // Adjust the columns here to match your <thead>
     cell(city);
+    cell(year || "—");
     cell(project);
     cell(type);
     cell(status);
@@ -564,6 +570,7 @@ function renderPermits() {
     cell(permitNo);
     cell(parcel);
 
+    // Link cell
     const tdLink = document.createElement("td");
     if (url) {
       const a = document.createElement("a");
