@@ -312,10 +312,20 @@ def main() -> int:
         else:
             print(f"[WARN] Unsupported source type {src.type} for {src.city_name}", file=sys.stderr)
             continue
-
+          
     if not all_rows:
         print("[WARN] No rows collected; keeping existing adu_permits.csv (if any).", file=sys.stderr)
         return 0
+
+    # Filter out cancelled permits
+    filtered_rows = []
+    for row in all_rows:
+        status = (row.get("Status") or "").strip().lower()
+        # Skip anything that looks cancelled / canceled
+        if status.startswith("cancel"):
+            continue
+        filtered_rows.append(row)
+    all_rows = filtered_rows
 
     # Sort by Approval_Date descending
     def parse_date(s: str) -> dt.date:
@@ -325,6 +335,7 @@ def main() -> int:
             return dt.date(1970, 1, 1)
 
     all_rows.sort(key=lambda r: parse_date(r.get("Approval_Date", "")), reverse=True)
+
 
     out_path = "adu_permits.csv"
     print(f"[INFO] Writing {len(all_rows)} rows to {out_path}", file=sys.stderr)
