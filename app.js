@@ -408,23 +408,22 @@ function initFilters() {
     if (el) el.addEventListener("change", applyFilters);
   });
 }
-
 // =========================================
-// PERMITS FEED (DETAILED TABLE – ONE ROW PER PERMIT)
+// PERMITS FEED (DETAILED TABLE)
 // =========================================
 
-// Extract a 4-digit year from Approval_Date
+// Extract a 4-digit year from the Approval_Date field
 function getPermitYear(row) {
   const raw = getPermit(row, PCOL.approvalDate);
-  if (!raw) return null;
+  if (!raw) return "";
 
   const match = String(raw).match(/\b(19\d{2}|20\d{2})\b/);
   if (match) return match[1];
 
   const d = new Date(raw);
-  if (!isNaN(d)) return String(d.getFullYear());
+  if (!Number.isNaN(d.getTime())) return String(d.getFullYear());
 
-  return null;
+  return "";
 }
 
 function initPermitsFilters() {
@@ -433,7 +432,6 @@ function initPermitsFilters() {
   const clearBtn   = document.getElementById("permitsClearFilters");
 
   if (!citySelect || !yearSelect || !clearBtn) {
-    // Permits table not present in HTML; nothing to wire up.
     return;
   }
 
@@ -472,7 +470,6 @@ function initPermitsFilters() {
 
   citySelect.addEventListener("change", applyPermitFilters);
   yearSelect.addEventListener("change", applyPermitFilters);
-
   clearBtn.addEventListener("click", () => {
     citySelect.value = "";
     yearSelect.value = "";
@@ -503,7 +500,7 @@ function applyPermitFilters() {
     const yr   = getPermitYear(row);
 
     if (cityVal && city !== cityVal) return false;
-    if (yearVal && yr !== yearVal) return false;
+    if (yearVal && yr !== yearVal)   return false;
 
     return true;
   });
@@ -525,7 +522,6 @@ function renderPermits() {
     return;
   }
 
-  // Base set: either the filtered subset or all permits
   const baseRows =
     filteredPermitRows && filteredPermitRows.length
       ? filteredPermitRows
@@ -545,47 +541,38 @@ function renderPermits() {
   summary.textContent = `${rowsToShow.length} permit(s) shown.`;
 
   rowsToShow.forEach((row) => {
-    // build <tr>…
-  });
-
-  }
-
-  summary.textContent = `${rowsToShow.length} permit(s) shown.`;
-
-  rowsToShow.forEach((row) => {
     const tr = document.createElement("tr");
 
-    const city      = getPermit(row, PCOL.city);
-    const year      = getPermitYear(row);
-    const project   = getPermit(row, PCOL.project);
-    const type      = getPermit(row, PCOL.type);
-    const status    = getPermit(row, PCOL.status);
-    const size      = getPermit(row, PCOL.size);
-    const zone      = getPermit(row, PCOL.zone);
-    const date      = getPermit(row, PCOL.approvalDate);
-    const permitNo  = getPermit(row, PCOL.permitNumber);
-    const parcel    = getPermit(row, PCOL.parcel);
-    const url       = getPermit(row, PCOL.url);
+    const city     = getPermit(row, PCOL.city);
+    const year     = getPermitYear(row);
+    const project  = getPermit(row, PCOL.project);
+    const type     = getPermit(row, PCOL.type);
+    const status   = getPermit(row, PCOL.status);
+    const size     = getPermit(row, PCOL.size);
+    const zone     = getPermit(row, PCOL.zone);
+    const date     = getPermit(row, PCOL.approvalDate);
+    const permitNo = getPermit(row, PCOL.permit);
+    const parcel   = getPermit(row, PCOL.parcel);
+    const url      = getPermit(row, PCOL.url);
 
-    function cell(text) {
+    function addCell(text) {
       const td = document.createElement("td");
       td.textContent = text && text !== "" ? text : "—";
       tr.appendChild(td);
     }
 
-    // Adjust the columns here to match your <thead>
-    cell(city);
-    cell(year || "—");
-    cell(project);
-    cell(type);
-    cell(status);
-    cell(size);
-    cell(zone);
-    cell(date);
-    cell(permitNo);
-    cell(parcel);
+    // Match your <thead> columns
+    addCell(city);
+    addCell(year || "—");
+    addCell(project);
+    addCell(type);
+    addCell(status);
+    addCell(size);
+    addCell(zone);
+    addCell(date);
+    addCell(permitNo);
+    addCell(parcel);
 
-    // Link cell
     const tdLink = document.createElement("td");
     if (url) {
       const a = document.createElement("a");
@@ -600,142 +587,6 @@ function renderPermits() {
     tr.appendChild(tdLink);
 
     tbody.appendChild(tr);
-  });
-}
-
-// =========================================
-// CITY SCORECARDS WITH LETTER GRADES
-// =========================================
-
-function gradeCity(rows) {
-  const aduIdx = headerIndex(COL.aduAllowed);
-  const daduIdx = headerIndex(COL.daduAllowed);
-  const maxADUIdx = headerIndex(COL.maxADUSize);
-  const minLotIdx = headerIndex(COL.minLotSize);
-  const parkingIdx = headerIndex(COL.aduParkingReq);
-  const ownerIdx = headerIndex(COL.ownerOcc);
-
-  let anyADU = false;
-  let anyDADU = false;
-  let maxADU = null;
-  let minLot = null;
-  let anyOwnerReq = false;
-  let anyParkingReq = false;
-
-  rows.forEach((row) => {
-    const adu = (row[aduIdx] || "").toLowerCase();
-    const dadu = (row[daduIdx] || "").toLowerCase();
-    if (adu === "yes" || adu === "y" || adu === "true") anyADU = true;
-    if (dadu === "yes" || dadu === "y" || dadu === "true") anyDADU = true;
-
-    const m = toNumber(row[maxADUIdx]);
-    if (m != null) {
-      if (maxADU == null || m > maxADU) maxADU = m;
-    }
-
-    const lot = toNumber(row[minLotIdx]);
-    if (lot != null) {
-      if (minLot == null || lot < minLot) minLot = lot;
-    }
-
-    const own = (row[ownerIdx] || "").toLowerCase();
-    if (own.includes("yes")) anyOwnerReq = true;
-
-    const p = (row[parkingIdx] || "").toLowerCase();
-    if (p && p !== "no") anyParkingReq = true;
-  });
-
-  // Heuristic score out of 100
-  let score = 50;
-
-  if (anyADU) score += 20;
-  if (anyDADU) score += 10;
-
-  if (maxADU != null) {
-    if (maxADU >= 1000) score += 10;
-    else if (maxADU < 600) score -= 5;
-  }
-
-  if (minLot != null) {
-    if (minLot <= 5000) score += 10;
-    else if (minLot > 8000) score -= 10;
-  }
-
-  if (!anyOwnerReq) score += 5;
-  else score -= 5;
-
-  if (!anyParkingReq) score += 5;
-
-  if (score > 100) score = 100;
-  if (score < 0) score = 0;
-
-  // Map to letter grades (can tweak thresholds anytime)
-  let grade = "C";
-  if (score >= 97) grade = "A+";
-  else if (score >= 93) grade = "A";
-  else if (score >= 90) grade = "A-";
-  else if (score >= 87) grade = "B+";
-  else if (score >= 83) grade = "B";
-  else if (score >= 80) grade = "B-";
-  else if (score >= 77) grade = "C+";
-  else if (score >= 73) grade = "C";
-  else if (score >= 70) grade = "C-";
-  else if (score >= 60) grade = "D";
-  else grade = "F";
-
-  return { grade, score, anyADU, anyDADU, maxADU, minLot };
-}
-
-function renderCityScorecards() {
-  const container = document.getElementById("cityScorecards");
-  if (!container) return;
-
-  container.innerHTML = "";
-
-  const cityIdx = headerIndex(COL.city);
-
-  const byCity = new Map();
-  rawRows.forEach((row) => {
-    const city = row[cityIdx] || "Unknown";
-    if (!byCity.has(city)) byCity.set(city, []);
-    byCity.get(city).push(row);
-  });
-
-  const sortedCities = Array.from(byCity.keys()).sort((a, b) =>
-    a.localeCompare(b)
-  );
-
-  sortedCities.forEach((city) => {
-    const rows = byCity.get(city);
-    const { grade, score, anyADU, anyDADU, maxADU, minLot } = gradeCity(rows);
-
-    const status = anyADU
-      ? anyDADU
-        ? "ADU + DADU"
-        : "ADU only"
-      : "No ADU";
-
-    const card = document.createElement("div");
-    card.className = "city-card";
-
-    card.innerHTML = `
-      <div class="city-card-header">
-        <h3>${city}</h3>
-        <span class="city-grade city-grade-${grade[0]}">${grade}</span>
-      </div>
-      <p class="city-status">${status}</p>
-      <ul>
-        <li><strong>Score</strong>: ${score}/100</li>
-        <li><strong>Max ADU size</strong>: ${
-          maxADU != null ? `${maxADU} sf` : "Not listed"
-        }</li>
-        <li><strong>Smallest min lot size</strong>: ${
-          minLot != null ? `${minLot.toLocaleString()} sf` : "Not listed"
-        }</li>
-      </ul>
-    `;
-
-    container.appendChild(card);
   });
 }
 
