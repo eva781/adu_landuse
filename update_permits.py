@@ -40,10 +40,13 @@ CITY_SOURCES: List[CitySource] = [
     #    CSV download endpoint:
     #    https://data.bellevuewa.gov/datasets/befaac91b58e4bca8f9cca811d4200a6_0.csv
     CitySource(
-        city_name="Bellevue",
-url="https://opendata.arcgis.com/datasets/befaac91b58e4bca8f9cca811d4200a6_0.csv?outSR=4326",
-        type="csv",
-        format="bellevue_adu",
+      CitySource(
+    city_name="Bellevue",
+    url="https://services.arcgis.com/9YgDo7Ef8pPKUwMb/ArcGIS/rest/services/Accessory_Dwelling_Unit_ADU_Permits/FeatureServer/0/query?where=1%3D1&outFields=*&f=json",
+    type="arcgis_json",
+    format="bellevue_arcgis",
+),
+
     ),
 
     # 2) Example hook for Shoreline (you can add later):
@@ -247,6 +250,21 @@ def normalize_bellevue_adu(raw: Dict[str, Any]) -> Dict[str, str]:
 
     return out
 
+def normalize_bellevue_arcgis(raw):
+    attrs = raw.get("attributes", {})
+    return {
+        "City": "Bellevue",
+        "Project_Name": attrs.get("ProjectName") or "",
+        "ADU_Type": attrs.get("ADUType") or "",
+        "Status": attrs.get("Status") or "",
+        "Permit_Number": attrs.get("PermitNumber") or "",
+        "Parcel": attrs.get("ParcelNumber") or "",
+        "Zone": attrs.get("Zoning") or "",
+        "ADU_Size_Sqft": attrs.get("ADUSizeSqft") or "",
+        "Approval_Date": attrs.get("ApprovalDate") or "",
+        "Source_URL": attrs.get("DetailPageURL") or "",
+        "Notes": attrs.get("Notes") or "",
+    }
 
 def normalize_generic_csv(city_name: str, raw: Dict[str, Any]) -> Dict[str, str]:
     """
