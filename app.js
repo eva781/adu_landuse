@@ -686,18 +686,38 @@ function renderPermits() {
     return;
   }
 
-  // Limit rendered rows
+
+  // Limit rendered rows and build a friendly summary (including counts by year)
   const rowsToShow = cleaned.slice(0, MAX_PERMITS_RENDERED);
 
-  if (cleaned.length > rowsToShow.length) {
-    summary.textContent =
-      `${rowsToShow.length} permit(s) shown (first ${rowsToShow.length} of ${cleaned.length}).`;
-  } else {
-    summary.textContent = `${rowsToShow.length} permit(s) shown.`;
+  // Aggregate counts by approval year (using getPermitYear helper)
+  const yearCounts = {};
+  cleaned.forEach((row) => {
+    const yr = getPermitYear(row);
+    if (!yr) return;
+    yearCounts[yr] = (yearCounts[yr] || 0) + 1;
+  });
+  const sortedYears = Object.keys(yearCounts).sort();
+
+  const totalLine =
+    cleaned.length > rowsToShow.length
+      ? `${rowsToShow.length} permit(s) shown (first ${rowsToShow.length} of ${cleaned.length}).`
+      : `${rowsToShow.length} permit(s) shown.`;
+
+  let breakdownLine = "";
+  if (sortedYears.length) {
+    const pieces = sortedYears.map((yr) => `${yr}: ${yearCounts[yr]}`);
+    breakdownLine = `Permits by approval year — ${pieces.join(" · ")}.`;
   }
+
+  // Two-line summary: overall total + per-year breakdown
+  summary.innerHTML = breakdownLine
+    ? `${totalLine}<br><span class="permits-year-breakdown">${breakdownLine}</span>`
+    : totalLine;
 
   rowsToShow.forEach((row) => {
     const tr = document.createElement("tr");
+    // ... (rest of your existing cell() calls)
 
     function cell(text) {
       const td = document.createElement("td");
