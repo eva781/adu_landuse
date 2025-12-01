@@ -578,16 +578,39 @@ function renderCityScorecards() {
 
 // Extract a 4-digit year from a permit row
 function getPermitYear(row) {
+  // 1) Try the Approval_Date column first (if you ever populate it later)
   const raw = getPermit(row, PCOL.approvalDate);
-  if (!raw) return "";
+  if (raw) {
+    const match = String(raw).match(/\b(19\d{2}|20\d{2})\b/);
+    if (match) return match[1];
 
-  const match = String(raw).match(/\b(19\d{2}|20\d{2})\b/);
-  if (match) return match[1];
+    const d = new Date(raw);
+    if (!Number.isNaN(d.getTime())) return String(d.getFullYear());
+  }
 
-  const d = new Date(raw);
-  if (!Number.isNaN(d.getTime())) return String(d.getFullYear());
+  // 2) Fallback: pull "Permit year: 2020" from Notes
+  const notes = getPermit(row, PCOL.notes);
+  if (notes) {
+    // Pattern like: "Permit year: 2019"
+    const m = String(notes).match(/Permit year:\s*(19\d{2}|20\d{2})/i);
+    if (m) return m[1];
+
+    // As a last resort, grab any 4-digit year in the notes
+    const m2 = String(notes).match(/\b(19\d{2}|20\d{2})\b/);
+    if (m2) return m2[1];
+  }
 
   return "";
+}
+function formatPermitDate(row) {
+  const raw = getPermit(row, PCOL.approvalDate);
+  if (raw && String(raw).trim()) {
+    // If you later populate real dates, you could format them here.
+    return String(raw).trim();
+  }
+
+  const yr = getPermitYear(row);
+  return yr || "";
 }
 
 function initPermitsFilters() {
