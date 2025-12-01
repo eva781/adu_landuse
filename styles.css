@@ -1067,7 +1067,49 @@ button {
 .compare-card li {
   margin-bottom: 0.15rem;
 }
+/* ===============================
+   City overview cards (used by app.js)
+   =============================== */
 
+.scorecard-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.city-card {
+  flex: 1 1 230px;
+  min-width: 0;
+  max-width: 260px;
+  background: #f9fbff;
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem 0.65rem;
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  position: relative;
+}
+
+.city-card h3 {
+  margin: 0 0 0.2rem;
+  font-size: 0.9rem;
+}
+
+.city-card .muted.small {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.grade-pill {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.55rem;
+  font-weight: 700;
+  font-size: 0.78rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: #1d4ed8;
+  color: #f9fafb;
+}
 /* =========================================
    FOOTER
    ========================================= */
