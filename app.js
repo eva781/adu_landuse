@@ -734,7 +734,7 @@ function renderPermits() {
     cell(getPermit(row, PCOL.status));
     cell(getPermit(row, PCOL.size));
     cell(getPermit(row, PCOL.zone));
-    cell(getPermit(row, PCOL.approvalDate));
+    cell(formatPermitDate(row));
     cell(getPermit(row, PCOL.permit));
     cell(getPermit(row, PCOL.parcel));
 
