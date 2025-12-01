@@ -188,13 +188,12 @@ async function loadPermitsData() {
     permitHeaders = parsed[headerRowIndex];
     const dataRows = parsed.slice(headerRowIndex + 1);
 
-    // Base rows: non-empty lines from the CSV
+    // First drop truly empty rows
     const nonEmptyRows = dataRows.filter((row) =>
-      row.some((cell) => cell && cell.trim() !== "")
+      row.some((cell) => cell && cell.trim && cell.trim() !== "")
     );
 
-    // Keep only rows that look like actual ADU / DADU permits, not every permit
-    // in the source dataset.
+    // Then keep only the rows that pass our ADU-specific check
     permitRows = nonEmptyRows.filter(isADUPermit);
     filteredPermitRows = permitRows.slice();
 
@@ -222,6 +221,24 @@ function get(row, colKey) {
   const idx = headerIndex(colKey);
   if (idx === -1) return "";
   return row[idx] || "";
+}
+// Keep only rows that look like actual ADU/DADU permits.
+// Your CSV already mostly contains ADU permits, but some rows like
+// "Adult Family Home", "Adult Toys", etc. are clearly not what we want.
+// Those go away here.
+function isADUPermit(row) {
+  const projectRaw = getPermit(row, PCOL.project);
+  const project = String(projectRaw || "").toLowerCase().trim();
+
+  // Drop blank project names
+  if (!project) return false;
+
+  // Hard-filter anything with "adult" in the project name.
+  // (Catches: "Adult Family Home", "Adult Toys", "Adult Day Services", etc.)
+  if (project.includes("adult")) return false;
+
+  // Otherwise, keep it. Your CSV is already pre-filtered to ADU-ish records.
+  return true;
 }
 
 function getPermit(row, colKey) {
