@@ -231,24 +231,39 @@ function getPermit(row, colKey) {
 }
 // Heuristic: keep only rows that look like actual ADU / DADU permits,
 // not every building permit in the source CSV.
+//
+// IMPORTANT: use word boundaries so we don't match "adu" inside "adult", etc.
 function isADUPermit(row) {
   const project = (getPermit(row, PCOL.project) || "").toString().toLowerCase();
   const notes = (getPermit(row, PCOL.notes) || "").toString().toLowerCase();
+
   const textToSearch = `${project} ${notes}`;
 
-  const keywords = [
-    "adu",
-    "dadu",
-    "accessory dwelling",
-    "accessory dwelling unit",
-    "backyard cottage",
-    "mother-in-law",
-    "mother in law",
-    "detached accessory dwelling",
+  // Word/phrase patterns that indicate an ADU/DADU project
+  const patterns = [
+    /\badu\b/i,
+    /\bdadu\b/i,
+    /\baccessory dwelling\b/i,
+    /\baccessory dwelling unit\b/i,
+    /\bbackyard cottage\b/i,
+    /\bmother[- ]in[- ]law\b/i,
+    /\bdetached accessory dwelling\b/i,
   ];
 
-  return keywords.some((kw) => textToSearch.includes(kw));
+  // Explicitly avoid common false positives like "adult"
+  const negativePatterns = [
+    /\badult\b/i,          // "adult family home", etc.
+  ];
+
+  // If any negative pattern matches, it's not an ADU even if other words appear
+  if (negativePatterns.some((re) => re.test(textToSearch))) {
+    return false;
+  }
+
+  // Keep the row only if at least one positive pattern matches as a whole word/phrase
+  return patterns.some((re) => re.test(textToSearch));
 }
+
 
 function uniqueValues(colKey) {
   const idx = headerIndex(colKey);
