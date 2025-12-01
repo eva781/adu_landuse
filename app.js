@@ -223,6 +223,26 @@ function getPermit(row, colKey) {
   if (idx === -1) return "";
   return row[idx] || "";
 }
+// Heuristic: keep only rows that look like actual ADU / DADU permits,
+// not every building permit in the source CSV.
+function isADUPermit(row) {
+  const project = (getPermit(row, PCOL.project) || "").toString().toLowerCase();
+  const notes = (getPermit(row, PCOL.notes) || "").toString().toLowerCase();
+  const textToSearch = `${project} ${notes}`;
+
+  const keywords = [
+    "adu",
+    "dadu",
+    "accessory dwelling",
+    "accessory dwelling unit",
+    "backyard cottage",
+    "mother-in-law",
+    "mother in law",
+    "detached accessory dwelling",
+  ];
+
+  return keywords.some((kw) => textToSearch.includes(kw));
+}
 
 function uniqueValues(colKey) {
   const idx = headerIndex(colKey);
