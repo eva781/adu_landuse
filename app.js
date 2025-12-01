@@ -185,13 +185,19 @@ async function loadPermitsData() {
       filteredPermitRows = [];
       return;
     }
-
     permitHeaders = parsed[headerRowIndex];
     const dataRows = parsed.slice(headerRowIndex + 1);
-    permitRows = dataRows.filter((row) =>
+
+    // Base rows: non-empty lines from the CSV
+    const nonEmptyRows = dataRows.filter((row) =>
       row.some((cell) => cell && cell.trim() !== "")
     );
+
+    // Keep only rows that look like actual ADU / DADU permits, not every permit
+    // in the source dataset.
+    permitRows = nonEmptyRows.filter(isADUPermit);
     filteredPermitRows = permitRows.slice();
+
   } catch (err) {
     console.warn("Error loading permits data:", err);
     permitHeaders = [];
