@@ -65,9 +65,12 @@ const PCOL = {
   approvalDate: "Approval_Date",
   url: "Source_URL",
   notes: "Notes",
+};
+
+// Limit how many permit rows we actually render at once.
+// The dataset is large; rendering too many rows freezes the browser.
 const MAX_PERMITS_RENDERED = 300;
 
-};
 
 // =========================================
 // SIMPLE CSV PARSER
@@ -508,12 +511,14 @@ function renderCityScorecards() {
 
   container.appendChild(frag);
 }
-
 // =========================================
-// PERMITS FEED (DETAILED TABLE)
+// PERMITS FEED (CLEAN + RESPONSIVE)
 // =========================================
 
-// Extract a 4-digit year from the Approval_Date field
+// How many rows we render without freezing the browser
+const MAX_PERMITS_RENDERED = 300;
+
+// Extract a 4-digit year from a permit row
 function getPermitYear(row) {
   const raw = getPermit(row, PCOL.approvalDate);
   if (!raw) return "";
@@ -532,9 +537,7 @@ function initPermitsFilters() {
   const yearSelect = document.getElementById("permitsYearFilter");
   const clearBtn   = document.getElementById("permitsClearFilters");
 
-  if (!citySelect || !yearSelect || !clearBtn) {
-    return;
-  }
+  if (!citySelect || !yearSelect || !clearBtn) return;
 
   const citySet = new Set();
   const yearSet = new Set();
@@ -547,27 +550,23 @@ function initPermitsFilters() {
     if (yr) yearSet.add(yr);
   });
 
-  // City dropdown
+  // Build city filter
   citySelect.innerHTML = '<option value="">All cities</option>';
-  Array.from(citySet)
-    .sort((a, b) => a.localeCompare(b))
-    .forEach((c) => {
-      const opt = document.createElement("option");
-      opt.value = c;
-      opt.textContent = c;
-      citySelect.appendChild(opt);
-    });
+  [...citySet].sort().forEach((c) => {
+    const opt = document.createElement("option");
+    opt.value = c;
+    opt.textContent = c;
+    citySelect.appendChild(opt);
+  });
 
-  // Year dropdown
+  // Build year filter
   yearSelect.innerHTML = '<option value="">All years</option>';
-  Array.from(yearSet)
-    .sort()
-    .forEach((y) => {
-      const opt = document.createElement("option");
-      opt.value = y;
-      opt.textContent = y;
-      yearSelect.appendChild(opt);
-    });
+  [...yearSet].sort().forEach((y) => {
+    const opt = document.createElement("option");
+    opt.value = y;
+    opt.textContent = y;
+    yearSelect.appendChild(opt);
+  });
 
   citySelect.addEventListener("change", applyPermitFilters);
   yearSelect.addEventListener("change", applyPermitFilters);
@@ -578,23 +577,13 @@ function initPermitsFilters() {
     renderPermits();
   });
 
-  // Initial state: show all permits
   filteredPermitRows = permitRows.slice();
   renderPermits();
 }
 
 function applyPermitFilters() {
-  const citySelect = document.getElementById("permitsCityFilter");
-  const yearSelect = document.getElementById("permitsYearFilter");
-
-  if (!citySelect || !yearSelect) {
-    filteredPermitRows = [];
-    renderPermits();
-    return;
-  }
-
-  const cityVal = (citySelect.value || "").trim();
-  const yearVal = (yearSelect.value || "").trim();
+  const cityVal = document.getElementById("permitsCityFilter").value.trim();
+  const yearVal = document.getElementById("permitsYearFilter").value.trim();
 
   filteredPermitRows = permitRows.filter((row) => {
     const city = (getPermit(row, PCOL.city) || "").trim();
@@ -605,48 +594,46 @@ function applyPermitFilters() {
 
     return true;
   });
-  
+
   renderPermits();
+}
+
 function renderPermits() {
   const tbody   = document.getElementById("permitsTableBody");
   const summary = document.getElementById("permitsSummary");
-
   if (!tbody || !summary) return;
 
   tbody.innerHTML = "";
 
-  // No permits loaded at all
   if (!permitRows.length) {
     summary.textContent =
       "No permit dataset loaded yet. Add adu_permits.csv next to index.html to see permits.";
     return;
   }
 
-  // Base rows = filtered subset (if any) or all
-  const baseRows =
+  // Base rows (filtered or not)
+  const base =
     filteredPermitRows && filteredPermitRows.length
       ? filteredPermitRows
       : permitRows;
 
-  // Drop cancelled / canceled permits
-  const filtered = baseRows.filter((row) => {
-    const status = (getPermit(row, PCOL.status) || "").trim().toLowerCase();
+  // Drop cancelled
+  const cleaned = base.filter((row) => {
+    const status = (getPermit(row, PCOL.status) || "").toLowerCase();
     return !status.startsWith("cancel");
   });
 
-  if (!filtered.length) {
+  if (!cleaned.length) {
     summary.textContent = "No permits match the current filters.";
     return;
   }
 
-  // 🚧 LIMIT how many we actually render to avoid freezing the page
-  const rowsToShow = filtered.slice(0, MAX_PERMITS_RENDERED);
+  // Limit rendered rows
+  const rowsToShow = cleaned.slice(0, MAX_PERMITS_RENDERED);
 
-  if (filtered.length > rowsToShow.length) {
+  if (cleaned.length > rowsToShow.length) {
     summary.textContent =
-      `${rowsToShow.length} permit(s) shown ` +
-      `(showing the first ${rowsToShow.length} of ${filtered.length}; ` +
-      `use filters to narrow results).`;
+      `${rowsToShow.length} permit(s) shown (first ${rowsToShow.length} of ${cleaned.length}).`;
   } else {
     summary.textContent = `${rowsToShow.length} permit(s) shown.`;
   }
@@ -654,97 +641,35 @@ function renderPermits() {
   rowsToShow.forEach((row) => {
     const tr = document.createElement("tr");
 
-    const city     = getPermit(row, PCOL.city);
-    const project  = getPermit(row, PCOL.project);
-    const type     = getPermit(row, PCOL.type);
-    const status   = getPermit(row, PCOL.status);
-    const size     = getPermit(row, PCOL.size);
-    const zone     = getPermit(row, PCOL.zone);
-    const date     = getPermit(row, PCOL.approvalDate);
-    const permitNo = getPermit(row, PCOL.permit);
-    const parcel   = getPermit(row, PCOL.parcel);
-    const url      = getPermit(row, PCOL.url);
-
-    function addCell(text) {
+    function cell(text) {
       const td = document.createElement("td");
-      td.textContent = text && text !== "" ? text : "—";
+      td.textContent = text || "—";
       tr.appendChild(td);
     }
 
-    // Match your <thead> columns: City | Project | Type | Status | Size | Zone | Approval Date | Permit # | Parcel | Link
-    addCell(city);
-    addCell(project);
-    addCell(type);
-    addCell(status);
-    addCell(size);
-    addCell(zone);
-    addCell(date);
-    addCell(permitNo);
-    addCell(parcel);
+    cell(getPermit(row, PCOL.city));
+    cell(getPermit(row, PCOL.project));
+    cell(getPermit(row, PCOL.type));
+    cell(getPermit(row, PCOL.status));
+    cell(getPermit(row, PCOL.size));
+    cell(getPermit(row, PCOL.zone));
+    cell(getPermit(row, PCOL.approvalDate));
+    cell(getPermit(row, PCOL.permit));
+    cell(getPermit(row, PCOL.parcel));
 
-    const tdLink = document.createElement("td");
+    const url = getPermit(row, PCOL.url);
+    const td = document.createElement("td");
     if (url) {
       const a = document.createElement("a");
       a.href = url;
       a.target = "_blank";
       a.rel = "noopener noreferrer";
       a.textContent = "Open";
-      tdLink.appendChild(a);
+      td.appendChild(a);
     } else {
-      tdLink.textContent = "—";
+      td.textContent = "—";
     }
-    tr.appendChild(tdLink);
-
-    tbody.appendChild(tr);
-  });
-}
-
-
-  summary.textContent = `${rowsToShow.length} permit(s) shown.`;
-
-  rowsToShow.forEach((row) => {
-    const tr = document.createElement("tr");
-
-    const city     = getPermit(row, PCOL.city);
-    const project  = getPermit(row, PCOL.project);
-    const type     = getPermit(row, PCOL.type);
-    const status   = getPermit(row, PCOL.status);
-    const size     = getPermit(row, PCOL.size);
-    const zone     = getPermit(row, PCOL.zone);
-    const date     = getPermit(row, PCOL.approvalDate);
-    const permitNo = getPermit(row, PCOL.permit);
-    const parcel   = getPermit(row, PCOL.parcel);
-    const url      = getPermit(row, PCOL.url);
-
-    function addCell(text) {
-      const td = document.createElement("td");
-      td.textContent = text && text !== "" ? text : "—";
-      tr.appendChild(td);
-    }
-
-    // Match your <thead> columns in index.html
-    addCell(city);
-    addCell(project);
-    addCell(type);
-    addCell(status);
-    addCell(size);
-    addCell(zone);
-    addCell(date);
-    addCell(permitNo);
-    addCell(parcel);
-
-    const tdLink = document.createElement("td");
-    if (url) {
-      const a = document.createElement("a");
-      a.href = url;
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      a.textContent = "Open";
-      tdLink.appendChild(a);
-    } else {
-      tdLink.textContent = "—";
-    }
-    tr.appendChild(tdLink);
+    tr.appendChild(td);
 
     tbody.appendChild(tr);
   });
