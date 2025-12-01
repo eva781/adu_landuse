@@ -516,7 +516,7 @@ function renderCityScorecards() {
 // =========================================
 
 // How many rows we render without freezing the browser
-const MAX_PERMITS_RENDERED = 300;
+// const MAX_PERMITS_RENDERED = 300;
 
 // Extract a 4-digit year from a permit row
 function getPermitYear(row) {
