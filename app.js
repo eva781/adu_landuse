@@ -576,7 +576,6 @@ function renderCityScorecards() {
 // How many rows we render without freezing the browser
 // const MAX_PERMITS_RENDERED = 300;
 
-// Extract a 4-digit year from a permit row
 function getPermitYear(row) {
   // 1) Try the Approval_Date column first (if you ever populate it later)
   const raw = getPermit(row, PCOL.approvalDate);
@@ -602,6 +601,7 @@ function getPermitYear(row) {
 
   return "";
 }
+
 function formatPermitDate(row) {
   const raw = getPermit(row, PCOL.approvalDate);
   if (raw && String(raw).trim()) {
