@@ -224,8 +224,7 @@ body {
   border-collapse: separate;
   border-spacing: 0;
   font-size: 0.82rem;
-  color: #000000;
-  opacity: 1;
+  color: var(--text-main);
 }
 
 /* Sticky header */
@@ -257,17 +256,7 @@ body {
   border-right: 1px dashed #e5e7eb;
   vertical-align: top;
   word-break: break-word;
-  color: #000000;
-  opacity: 1;
-  font-weight: 600;
-}
-
-.reg-table,
-.reg-table * {
-  color: #000000 !important;
-  opacity: 1 !important;
-  filter: none !important;
-  mix-blend-mode: normal !important;
+  color: inherit;
 }
 
 .reg-table a {
