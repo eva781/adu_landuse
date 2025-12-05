@@ -23,33 +23,51 @@ const COL = {
   zoneType: "Zone_Type",
   aduAllowed: "ADU_Allowed",
   daduAllowed: "DADU_Allowed",
-  maxADUs: "Max_ADUs_Per_Lot",
+  maxADUs: "Max_ADUs/DADUs_Per_Dwelling_Unit",
   maxADUSize: "Max_ADU_Size_Sqft",
-  maxADUSizePct: "Max_ADU_Size_Percent_Primary",
+  maxADUSizePct: "Max_ADU/DADU_Size_Percent_Primary/Lot",
   maxDADUSize: "Max_DADU_Size_Sqft",
   minLotSize: "Min_Lot_Size_Sqft",
+  minLotWidth: "Min_Lot_Width_Sqft",
+  minLotDepth: "Min_Lot_Depth",
+  minLotFrontage: "Min_Lot_Frontage",
+  density: "Residential_Density",
+  maxLotCoverage: "Max_Lot_Coverage_Percent",
+  maxFAR: "Max_FAR",
   minParking: "Min_Parking_Spaces",
   parkingNotes: "Parking_Notes",
-  alleyAccess: "Alley_Access_Allowed",
+  alleyAccess: "Principal_Min_Rear_Setback_AlleyAccess",
   ownerOcc: "Owner_Occupancy_Required",
   ownerOccNotes: "Owner_Occupancy_Notes",
-  frontSetback: "Min_Front_Setback_ft",
-  sideSetback: "Min_Side_Setback_ft",
-  rearSetback: "Min_Rear_Setback_ft",
-  heightPrimary: "Max_Building_Height_Primary_ft",
+  frontSetback: "Min_Residential_Attached_Accessory_Front_Setback",
+  sideSetback: "Min_Residentia_Attachedl_Accessory_Side_Setback",
+  rearSetback: "Min_Residential_Attached_Rear_Setback",
+  alleySetback: "Min_Residential_Accessory_Rear_Alley_Setback",
+  primaryFrontSetback: "Principal_Min_Front_Setback_ft",
+  primaryStreetSide: "Principal_Min_Street_Side_Setback",
+  primaryInteriorSide: "Principal_Min_Interior_Side_Setback",
+  primaryRear: "Principal_Min_Rear_Setback",
+  heightPrimary: "Max_Building_Height",
   heightDADU: "DADU_Max_Height_ft",
   codeSection: "Reference_Code_Section",
   sourceURL: "Source_Document_URL",
-  notes: "Notes",
-  maxHardSurface: "Max_Hard_Surface_Percent",
-  maxImpervious: "Max_Impervious_Surface_Percent",
+  notes: "Greenscape_Notes",
+  maxHardSurface: "Max_Imprevious_Surface",
+  maxImpervious: "Max_Imprevious_Surface",
   aduParkingReq: "ADU_Parking_Required",
-  aduParkingSmall: "ADU_Parking_Exempt_If_Small",
+  aduParkingSmall: "ADU_Size_Notes",
   aduParkingTransit: "ADU_Parking_Exempt_If_Transit",
-  impactFees: "Impact_Fees_Notes",
+  impactFees: "Fee",
   aduConversionAllowed: "ADU_Conversion_Allowed",
   aduConversionNotes: "ADU_Conversion_Notes",
-  daduSetbackNotes: "DADU_Setback_Notes",
+  daduSetbackNotes: "DADU_Min_Rear_Setback",
+  daduSideLotLine: "DADU_Min_LotLine_Side _Setback",
+  daduStreetSide: "DADU_Min_Street_Side_Setback",
+  daduFromPrincipal: "DADU_Min_Setback_From_Principal",
+  minADUDADUSize: "Min_ADU+DADU_Size_Sqft",
+  maxADUHeight: "Max_ADU_Height_ft",
+  lastReviewed: "Last_Reviewed_Date",
+  shortTermRental: "Short_Term_Rental_Allowed",
 };
 
 // Column map for permits dataset (matches adu_permits.csv)
@@ -226,21 +244,6 @@ function get(row, colKey) {
 // Your CSV already mostly contains ADU permits, but some rows like
 // "Adult Family Home", "Adult Toys", etc. are clearly not what we want.
 // Those go away here.
-function isADUPermit(row) {
-  const projectRaw = getPermit(row, PCOL.project);
-  const project = String(projectRaw || "").toLowerCase().trim();
-
-  // Drop blank project names
-  if (!project) return false;
-
-  // Hard-filter anything with "adult" in the project name.
-  // (Catches: "Adult Family Home", "Adult Toys", "Adult Day Services", etc.)
-  if (project.includes("adult")) return false;
-
-  // Otherwise, keep it. Your CSV is already pre-filtered to ADU-ish records.
-  return true;
-}
-
 function getPermit(row, colKey) {
   const idx = pHeaderIndex(colKey);
   if (idx === -1) return "";
@@ -304,21 +307,122 @@ function toNumber(v) {
 // TABLE RENDERING & FILTERS (ALL COLUMNS)
 // =========================================
 
+const DISPLAY_COLUMNS = [
+  { label: "City", render: (row) => formatValue(get(row, COL.city)) },
+  {
+    label: "Zone & type",
+    render: (row) =>
+      formatParts([
+        formatValue(get(row, COL.zone)),
+        formatValue(get(row, COL.zoneType)),
+      ]),
+  },
+  {
+    label: "ADU policy",
+    render: (row) =>
+      formatParts([
+        `ADU: ${formatValue(get(row, COL.aduAllowed))}`,
+        `DADU: ${formatValue(get(row, COL.daduAllowed))}`,
+        `Max units: ${formatValue(get(row, COL.maxADUs))}`,
+      ]),
+  },
+  {
+    label: "Site minimums",
+    render: (row) =>
+      formatParts(
+        [
+          sizedLabel("Lot", get(row, COL.minLotSize)),
+          sizedLabel("Width", get(row, COL.minLotWidth)),
+          sizedLabel("Depth", get(row, COL.minLotDepth)),
+          sizedLabel("Frontage", get(row, COL.minLotFrontage)),
+          sizedLabel("Density", get(row, COL.density)),
+          sizedLabel("Coverage", get(row, COL.maxLotCoverage)),
+        ].filter(Boolean)
+      ),
+  },
+  {
+    label: "Setbacks",
+    render: (row) =>
+      formatParts(
+        [
+          sizedLabel("Front", get(row, COL.primaryFrontSetback)),
+          sizedLabel("Street", get(row, COL.primaryStreetSide)),
+          sizedLabel("Interior", get(row, COL.primaryInteriorSide)),
+          sizedLabel("Rear", get(row, COL.primaryRear)),
+          sizedLabel(
+            "Rear (alley)",
+            get(row, COL.alleyAccess) || get(row, COL.alleySetback)
+          ),
+          sizedLabel("Accessory front", get(row, COL.frontSetback)),
+          sizedLabel("Accessory side", get(row, COL.sideSetback)),
+          sizedLabel("Accessory rear", get(row, COL.rearSetback)),
+          sizedLabel("Accessory alley", get(row, COL.alleySetback)),
+          sizedLabel("DADU rear", get(row, COL.daduSetbackNotes)),
+          sizedLabel("DADU side", get(row, COL.daduSideLotLine)),
+          sizedLabel("DADU street", get(row, COL.daduStreetSide)),
+          sizedLabel("From house", get(row, COL.daduFromPrincipal)),
+        ].filter(Boolean)
+      ),
+  },
+  {
+    label: "Parking",
+    render: (row) =>
+      formatParts(
+        [
+          sizedLabel("Min spaces", get(row, COL.minParking)),
+          sizedLabel("Required", get(row, COL.aduParkingReq)),
+          sizedLabel("Transit", get(row, COL.aduParkingTransit)),
+          formatValue(get(row, COL.parkingNotes)),
+        ].filter(Boolean)
+      ),
+  },
+  {
+    label: "Size & height",
+    render: (row) =>
+      formatParts(
+        [
+          sizedLabel("Min ADU/DADU", get(row, COL.minADUDADUSize)),
+          sizedLabel("Max ADU", get(row, COL.maxADUSize)),
+          sizedLabel("Max DADU", get(row, COL.maxDADUSize)),
+          sizedLabel("ADU % of lot", get(row, COL.maxADUSizePct)),
+          sizedLabel("ADU height", get(row, COL.maxADUHeight)),
+          sizedLabel("DADU height", get(row, COL.heightDADU)),
+          sizedLabel("Primary height", get(row, COL.heightPrimary)),
+          sizedLabel("FAR", get(row, COL.maxFAR)),
+          sizedLabel("Hard surface", get(row, COL.maxImpervious)),
+        ].filter(Boolean)
+      ),
+  },
+  {
+    label: "Occupancy & fees",
+    render: (row) =>
+      formatParts(
+        [
+          sizedLabel("Owner occ", get(row, COL.ownerOcc)),
+          sizedLabel("Short-term", get(row, COL.shortTermRental)),
+          sizedLabel("Fees", get(row, COL.impactFees)),
+          formatValue(get(row, COL.ownerOccNotes)),
+        ].filter(Boolean)
+      ),
+  },
+  {
+    label: "Notes",
+    render: (row) => formatValue(get(row, COL.notes)),
+  },
+  { label: "Code link", render: (row) => renderCodeLink(row) },
+];
+
 function buildTableHeader() {
   const thead = document.getElementById("tableHead");
   if (!thead) return;
   thead.innerHTML = "";
   const tr = document.createElement("tr");
 
-  headers.forEach((h) => {
+  DISPLAY_COLUMNS.forEach((col) => {
     const th = document.createElement("th");
-    th.textContent = h || "—";
+    th.textContent = col.label;
     tr.appendChild(th);
   });
-
-  const thCode = document.createElement("th");
-  thCode.textContent = "Code link";
-  tr.appendChild(thCode);
 
   thead.appendChild(tr);
 }
@@ -326,47 +430,80 @@ function buildTableHeader() {
 function renderTable() {
   const tbody = document.getElementById("tableBody");
   const summary = document.getElementById("summary");
+  const emptyState = document.getElementById("tableEmpty");
   if (!tbody) return;
 
   tbody.innerHTML = "";
 
   if (summary) {
-    summary.textContent = `${filteredRows.length} of ${rawRows.length} zoning rows shown`;
+    const countText =
+      filteredRows.length === rawRows.length
+        ? `${filteredRows.length} zoning rows shown`
+        : `${filteredRows.length} of ${rawRows.length} zoning rows shown`;
+    summary.textContent = countText;
   }
 
-  const urlIdx = headerIndex(COL.sourceURL);
+  if (!filteredRows.length) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = DISPLAY_COLUMNS.length;
+    td.className = "table-empty-row";
+    td.textContent = "No results. Adjust or clear your filters.";
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    if (emptyState) emptyState.hidden = false;
+    return;
+  }
+
+  if (emptyState) emptyState.hidden = true;
 
   filteredRows.forEach((row) => {
     const tr = document.createElement("tr");
 
-    row.forEach((cell, i) => {
+    DISPLAY_COLUMNS.forEach((col) => {
       const td = document.createElement("td");
-      const rawText = cell == null ? "" : String(cell).trim();
-      const text = rawText || "—";
-
-      if (i === urlIdx && rawText) {
-        const a = document.createElement("a");
-        a.href = rawText;
-        a.target = "_blank";
-        a.rel = "noopener noreferrer";
-        a.textContent = "Code link";
-        a.className = "table-link";
-        td.appendChild(a);
+      const rendered = col.render(row);
+      if (rendered instanceof HTMLElement) {
+        td.appendChild(rendered);
       } else {
-        td.textContent = text;
+        td.textContent = rendered;
       }
-
       tr.appendChild(td);
     });
 
-    if (urlIdx === -1) {
-      const td = document.createElement("td");
-      td.textContent = "—";
-      tr.appendChild(td);
-    }
-
     tbody.appendChild(tr);
   });
+}
+
+function formatValue(value) {
+  const text = value == null ? "" : String(value).trim();
+  return text || "—";
+}
+
+function formatParts(parts) {
+  const clean = parts
+    .map((p) => (p == null ? "" : String(p).trim()))
+    .filter((p) => p && p !== "—");
+  if (!clean.length) return "—";
+  return clean.join(" • ");
+}
+
+function sizedLabel(label, value) {
+  const text = value == null ? "" : String(value).trim();
+  if (!text) return "";
+  return `${label}: ${text}`;
+}
+
+function renderCodeLink(row) {
+  const url = get(row, COL.sourceURL);
+  if (!url) return "—";
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.textContent = "Open code";
+  a.className = "table-link";
+  return a;
 }
 
 function fillSelect(id, colName, placeholder) {
@@ -682,6 +819,7 @@ function applyPermitFilters() {
 function renderPermits() {
   const tbody   = document.getElementById("permitsTableBody");
   const summary = document.getElementById("permitsSummary");
+  const emptyState = document.getElementById("permitsEmpty");
   if (!tbody || !summary) return;
 
   tbody.innerHTML = "";
@@ -689,6 +827,14 @@ function renderPermits() {
   if (!permitRows.length) {
     summary.textContent =
       "No permit dataset loaded yet. Add adu_permits.csv next to index.html to see permits.";
+    if (emptyState) emptyState.hidden = false;
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 9;
+    td.className = "table-empty-row";
+    td.textContent = "Permit data is unavailable.";
+    tr.appendChild(td);
+    tbody.appendChild(tr);
     return;
   }
 
@@ -706,8 +852,18 @@ function renderPermits() {
 
   if (!cleaned.length) {
     summary.textContent = "No permits match the current filters.";
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 9;
+    td.className = "table-empty-row";
+    td.textContent = "No permit records meet the current criteria.";
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    if (emptyState) emptyState.hidden = false;
     return;
   }
+
+  if (emptyState) emptyState.hidden = true;
 
   // Limit rendered rows
   const rowsToShow = cleaned.slice(0, MAX_PERMITS_RENDERED);
