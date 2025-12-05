@@ -510,6 +510,22 @@ function sizedLabel(label, value) {
   return `${label}: ${text}`;
 }
 
+function renderCodeLink(row) {
+  // Some jurisdictions may eventually include a code citation / URL column.
+  // Gracefully handle cases where the column is missing or blank so the UI
+  // still renders instead of throwing a ReferenceError (which previously left
+  // the entire table empty).
+  const url = get(row, COL.codeLink);
+  if (!url) return "—";
+
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.target = "_blank";
+  anchor.rel = "noreferrer";
+  anchor.textContent = "Open code";
+  return anchor;
+}
+
 function renderCodeMeta(row) {
   return formatValue(get(row, COL.lastReviewed));
 }
@@ -569,6 +585,44 @@ function applyFilters() {
 
   renderTable();
 }
+
+function rebuildZoneFilterForCity() {
+  const zoneSelect = document.getElementById("zoneFilter");
+  if (!zoneSelect) return;
+
+  const cityVal = (document.getElementById("cityFilter").value || "").trim();
+  const zoneIdx = headerIndex(COL.zone);
+  const cityIdx = headerIndex(COL.city);
+
+  if (zoneIdx === -1) return;
+
+  const zones = new Set();
+  rawRows.forEach((row) => {
+    const zone = row[zoneIdx];
+    const city = cityIdx !== -1 ? row[cityIdx] : "";
+    if (!zone) return;
+    if (cityVal && city !== cityVal) return;
+    zones.add(zone);
+  });
+
+  const sortedZones = Array.from(zones).sort((a, b) => a.localeCompare(b));
+
+  zoneSelect.innerHTML = "";
+
+  const anyOpt = document.createElement("option");
+  anyOpt.value = "";
+  anyOpt.textContent = cityVal
+    ? "All zones in selected city"
+    : "All zones";
+  zoneSelect.appendChild(anyOpt);
+
+  sortedZones.forEach((zone) => {
+    const opt = document.createElement("option");
+    opt.value = zone;
+    opt.textContent = zone;
+    zoneSelect.appendChild(opt);
+  });
+}
 function initFilters() {
   // City is still built from the CSV
   fillSelect("cityFilter", COL.city, "All cities");
@@ -623,19 +677,6 @@ function initFilters() {
 
   // Other filters just trigger applyFilters as before
   [
-    "zoneFilter",
-    "zoneTypeFilter",
-    "aduFilter",
-    "daduFilter",
-    "ownerOccFilter",
-  ].forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener("change", applyFilters);
-  });
-}
-
-  [
-    "cityFilter",
     "zoneFilter",
     "zoneTypeFilter",
     "aduFilter",
