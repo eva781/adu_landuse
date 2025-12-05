@@ -565,10 +565,13 @@ function applyFilters() {
 
   renderTable();
 }
-
 function initFilters() {
+  // City is still built from the CSV
   fillSelect("cityFilter", COL.city, "All cities");
-  fillSelect("zoneFilter", COL.zone, "All zones");
+
+  // Zone is now driven by the selected city
+  rebuildZoneFilterForCity();
+
   fillSelect("zoneTypeFilter", COL.zoneType, "All zone types");
   fillSelect("aduFilter", COL.aduAllowed, "Any ADU");
   fillSelect("daduFilter", COL.daduAllowed, "Any DADU");
@@ -594,10 +597,38 @@ function initFilters() {
 
       if (search) search.value = "";
 
+      // When everything is cleared, restore the full zone list
+      rebuildZoneFilterForCity();
+
       filteredRows = rawRows.slice();
       renderTable();
     });
   }
+
+  // Special behavior for city: when city changes,
+  // rebuild zone options *then* apply filters.
+  const cityEl = document.getElementById("cityFilter");
+  if (cityEl) {
+    cityEl.addEventListener("change", () => {
+      rebuildZoneFilterForCity();
+      const zoneEl = document.getElementById("zoneFilter");
+      if (zoneEl) zoneEl.value = "";
+      applyFilters();
+    });
+  }
+
+  // Other filters just trigger applyFilters as before
+  [
+    "zoneFilter",
+    "zoneTypeFilter",
+    "aduFilter",
+    "daduFilter",
+    "ownerOccFilter",
+  ].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("change", applyFilters);
+  });
+}
 
   [
     "cityFilter",
