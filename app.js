@@ -831,7 +831,7 @@ function renderPermits() {
   if (!permitRows.length) {
     summary.textContent =
       "No permit dataset loaded yet. Add adu_permits.csv next to index.html to see permits.";
-    if (emptyState) emptyState.hidden = false;
+    if (emptyState) emptyState.hidden = true;    
     const tr = document.createElement("tr");
     const td = document.createElement("td");
     td.colSpan = 9;
