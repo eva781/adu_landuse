@@ -961,6 +961,7 @@ button {
 }
 
 .table-wrapper {
+  position: relative;
   max-height: 430px;
   overflow: auto;
   border-radius: var(--radius-md);
