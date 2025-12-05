@@ -14,61 +14,73 @@ let permitHeaders = [];
 let permitRows = [];
 let filteredPermitRows = [];
 
-// Column map for zoning dataset
 const COL = {
+  // Identity / filters
   city: "City",
   county: "County",
   state: "State",
   zone: "Zone",
   zoneType: "Zone_Type",
-  aduAllowed: "ADU_Allowed",
-  daduAllowed: "DADU_Allowed",
-  maxADUs: "Max_ADUs/DADUs_Per_Dwelling_Unit",
-  maxADUSize: "Max_ADU_Size_Sqft",
-  maxADUSizePct: "Max_ADU/DADU_Size_Percent_Primary/Lot",
-  maxDADUSize: "Max_DADU_Size_Sqft",
+
+  // Site minimums & intensity
   minLotSize: "Min_Lot_Size_Sqft",
   minLotWidth: "Min_Lot_Width_Sqft",
   minLotDepth: "Min_Lot_Depth",
   minLotFrontage: "Min_Lot_Frontage",
   density: "Residential_Density",
+  maxImpervious: "Max_Imprevious_Surface",    // main one we use
+  maxHardSurface: "Max_Imprevious_Surface",   // alias if you reference it elsewhere
   maxLotCoverage: "Max_Lot_Coverage_Percent",
   maxFAR: "Max_FAR",
-  minParking: "Min_Parking_Spaces",
-  parkingNotes: "Parking_Notes",
-  alleyAccess: "Principal_Min_Rear_Setback_AlleyAccess",
-  ownerOcc: "Owner_Occupancy_Required",
-  ownerOccNotes: "Owner_Occupancy_Notes",
-  frontSetback: "Min_Residential_Attached_Accessory_Front_Setback",
-  sideSetback: "Min_Residentia_Attachedl_Accessory_Side_Setback",
-  rearSetback: "Min_Residential_Attached_Rear_Setback",
-  alleySetback: "Min_Residential_Accessory_Rear_Alley_Setback",
+
+  // Heights – principal & ADU/DADU
+  heightPrimary: "Max_Building_Height",
   primaryFrontSetback: "Principal_Min_Front_Setback_ft",
   primaryStreetSide: "Principal_Min_Street_Side_Setback",
   primaryInteriorSide: "Principal_Min_Interior_Side_Setback",
   primaryRear: "Principal_Min_Rear_Setback",
-  heightPrimary: "Max_Building_Height",
+  alleyAccess: "Principal_Min_Rear_Setback_AlleyAccess",
+
+  // Parking
+  minParking: "Min_Parking_Spaces",
+  parkingNotes: "Parking_Notes",
+
+  // ADUs / DADUs – allowed?
+  aduAllowed: "ADU_Allowed",
+  daduAllowed: "DADU_Allowed",
+  ownerOcc: "Owner_Occupancy_Required",
+  shortTermRental: "Short_Term_Rental_Allowed",
+
+  // ADUs / DADUs – intensity & size
+  maxADUs: "Max_ADUs/DADUs_Per_Dwelling_Unit",
+  minADUDADUSize: "Min_ADU+DADU_Size_Sqft",
+  maxADUSizePct: "Max_ADU/DADU_Size_Percent_Primary/Lot",
+  maxADUSize: "Max_ADU_Size_Sqft",
+  aduSizeNotes: "ADU_Size_Notes",     // I’ll reference this by this nicer name
+  maxADUHeight: "Max_ADU_Height_ft",
+  maxDADUSize: "Max_DADU_Size_Sqft",
   heightDADU: "DADU_Max_Height_ft",
-  codeSection: "Reference_Code_Section",
-  sourceURL: "Source_Document_URL",
-  notes: "Greenscape_Notes",
-  maxHardSurface: "Max_Imprevious_Surface",
-  maxImpervious: "Max_Imprevious_Surface",
+
+  // ADUs / DADUs – parking and transit
   aduParkingReq: "ADU_Parking_Required",
-  aduParkingSmall: "ADU_Size_Notes",
   aduParkingTransit: "ADU_Parking_Exempt_If_Transit",
-  impactFees: "Fee",
-  aduConversionAllowed: "ADU_Conversion_Allowed",
-  aduConversionNotes: "ADU_Conversion_Notes",
-  daduSetbackNotes: "DADU_Min_Rear_Setback",
+
+  // Accessory + DADU setbacks
+  frontSetback: "Min_Residential_Attached_Accessory_Front_Setback",
+  sideSetback: "Min_Residentia_Attachedl_Accessory_Side_Setback",
+  rearSetback: "Min_Residential_Attached_Rear_Setback",
+  alleySetback: "Min_Residential_Accessory_Rear_Alley_Setback",
+  daduRear: "DADU_Min_Rear_Setback",
   daduSideLotLine: "DADU_Min_LotLine_Side _Setback",
   daduStreetSide: "DADU_Min_Street_Side_Setback",
   daduFromPrincipal: "DADU_Min_Setback_From_Principal",
-  minADUDADUSize: "Min_ADU+DADU_Size_Sqft",
-  maxADUHeight: "Max_ADU_Height_ft",
+
+  // Notes / meta
+  greenscapeNotes: "Greenscape_Notes",
+  impactFees: "Fee",
   lastReviewed: "Last_Reviewed_Date",
-  shortTermRental: "Short_Term_Rental_Allowed",
 };
+
 
 // Column map for permits dataset (matches adu_permits.csv)
 const PCOL = {
@@ -405,7 +417,7 @@ const DISPLAY_COLUMNS = [
           sizedLabel("Owner occ", get(row, COL.ownerOcc)),
           sizedLabel("Short-term", get(row, COL.shortTermRental)),
           sizedLabel("Fees", get(row, COL.impactFees)),
-          formatValue(get(row, COL.ownerOccNotes)),
+          formatValue(get(row, COL.greenscapeNotes)),        
         ].filter(Boolean)
       ),
   },
@@ -498,16 +510,8 @@ function sizedLabel(label, value) {
   return `${label}: ${text}`;
 }
 
-function renderCodeLink(row) {
-  const url = get(row, COL.sourceURL);
-  if (!url) return "—";
-  const a = document.createElement("a");
-  a.href = url;
-  a.target = "_blank";
-  a.rel = "noopener noreferrer";
-  a.textContent = "Open code";
-  a.className = "table-link";
-  return a;
+function renderCodeMeta(row) {
+  return formatValue(get(row, COL.lastReviewed));
 }
 
 function fillSelect(id, colName, placeholder) {
