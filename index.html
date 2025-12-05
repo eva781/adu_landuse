@@ -39,11 +39,16 @@
          2) REGULATIONS TABLE + FILTERS
          ============================ -->
     <section class="filters-card" aria-labelledby="regulations-title">
-      <h2 id="regulations-title">ADU / DADU regulations by zone</h2>
-      <p class="section-help">
-        Filter the dataset and compare key zoning rules across King County jurisdictions.
-        Use the search to look across all columns.
-      </p>
+      <div class="section-heading">
+        <div class="eyebrow">Data explorer</div>
+        <div>
+          <h2 id="regulations-title">ADU / DADU regulations by zone</h2>
+          <p class="section-help">
+            Filter the dataset and compare key zoning rules across King County jurisdictions.
+            Use the search to look across all columns.
+          </p>
+        </div>
+      </div>
 
       <div class="reg-controls">
         <div class="reg-search">
@@ -51,7 +56,7 @@
             <span>Search all fields</span>
             <input id="searchInput" type="text" placeholder="Type city, zone, or keyword…" />
           </label>
-          <button id="clearFilters" type="button">Clear filters</button>
+          <button id="clearFilters" class="ghost-button" type="button">Clear filters</button>
         </div>
 
         <div class="filters-grid">
@@ -87,9 +92,13 @@
           <thead id="tableHead"></thead>
           <tbody id="tableBody"></tbody>
         </table>
+        <div id="tableEmpty" class="empty-state" aria-live="polite" hidden>
+          <div class="empty-title">No rows match the current filters</div>
+          <p class="empty-copy">Adjust the filters or clear them to bring the zoning table back.</p>
+        </div>
       </div>
 
-      <p id="summary" class="fine-print">
+      <p id="summary" class="fine-print" aria-live="polite">
         Data and diagrams are simplified for feasibility screening and do not replace a detailed code review
         or conversation with planning staff.
       </p>
@@ -182,11 +191,16 @@
          4) ADU PERMITS & PRODUCTION
          ============================ -->
     <section class="permits-card" aria-labelledby="permits-title">
-      <h2 id="permits-title">ADU permits &amp; production</h2>
-      <p class="section-help">
-        Historic ADU permit counts by jurisdiction, based on your permits CSV. Use the filters to focus
-        on a specific city or time period.
-      </p>
+      <div class="section-heading">
+        <div class="eyebrow">Production tracking</div>
+        <div>
+          <h2 id="permits-title">ADU permits &amp; production</h2>
+          <p class="section-help">
+            Historic ADU permit counts by jurisdiction, based on your permits CSV. Use the filters to focus
+            on a specific city or time period.
+          </p>
+        </div>
+      </div>
 
       <div class="permits-filters">
         <label>
@@ -197,7 +211,7 @@
           <span>Approval year</span>
           <select id="permitsYearFilter"></select>
         </label>
-        <button id="permitsClearFilters" class="secondary-button" type="button">
+        <button id="permitsClearFilters" class="ghost-button" type="button">
           Clear permit filters
         </button>
       </div>
@@ -222,6 +236,10 @@
             </thead>
             <tbody id="permitsTableBody"></tbody>
           </table>
+          <div id="permitsEmpty" class="empty-state" aria-live="polite" hidden>
+            <div class="empty-title">No permits found</div>
+            <p class="empty-copy">Refine or clear the filters to bring permit records back into view.</p>
+          </div>
         </div>
       </div>
     </section>
