@@ -213,6 +213,9 @@ body {
   background: #ffffff;
   overflow-x: auto;
   position: relative;
+  color: #000000;
+  opacity: 1;
+  filter: none;
 }
 
 .reg-table {
@@ -221,7 +224,8 @@ body {
   border-collapse: separate;
   border-spacing: 0;
   font-size: 0.82rem;
-  color: #0b0b0b;
+  color: #000000;
+  opacity: 1;
 }
 
 /* Sticky header */
@@ -230,7 +234,7 @@ body {
   top: 0;
   z-index: 1;
   background: #f3f4ff;
-  color: #1f2937;
+  color: #000000;
   font-weight: 600;
   padding: 0.5rem 0.6rem;
   border-bottom: 1px solid #e5e7eb;
@@ -253,16 +257,17 @@ body {
   border-right: 1px dashed #e5e7eb;
   vertical-align: top;
   word-break: break-word;
-  color: inherit;
+  color: #000000;
   opacity: 1;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .reg-table,
 .reg-table * {
-  color: #0b0b0b !important;
+  color: #000000 !important;
   opacity: 1 !important;
   filter: none !important;
+  mix-blend-mode: normal !important;
 }
 
 .reg-table a {
