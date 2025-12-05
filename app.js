@@ -211,8 +211,12 @@ async function loadPermitsData() {
       row.some((cell) => cell && cell.trim && cell.trim() !== "")
     );
 
-    // Then keep only the rows that pass our ADU-specific check
-    permitRows = nonEmptyRows.filter(isADUPermit);
+    // Then keep only the rows that pass our ADU-specific check. If nothing
+    // matches (e.g., the dataset already contains only ADU permits and the
+    // heuristic is too strict), fall back to the full cleaned set so data
+    // still renders instead of showing an empty-state popup.
+    const aduRows = nonEmptyRows.filter(isADUPermit);
+    permitRows = aduRows.length ? aduRows : nonEmptyRows;
     filteredPermitRows = permitRows.slice();
 
   } catch (err) {
