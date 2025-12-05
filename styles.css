@@ -221,6 +221,7 @@ body {
   border-collapse: separate;
   border-spacing: 0;
   font-size: 0.82rem;
+  color: #0b0b0b;
 }
 
 /* Sticky header */
@@ -245,12 +246,33 @@ body {
 }
 
 /* Body cells */
+.reg-table thead th,
 .reg-table tbody td {
   padding: 0.4rem 0.6rem;
   border-bottom: 1px solid #f3f4f6;
   border-right: 1px dashed #e5e7eb;
   vertical-align: top;
   word-break: break-word;
+  color: inherit;
+  opacity: 1;
+  font-weight: 500;
+}
+
+.reg-table,
+.reg-table * {
+  color: #0b0b0b !important;
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+.reg-table a {
+  color: #2563eb;
+}
+
+.reg-table a:hover,
+.reg-table a:focus {
+  color: #1d4ed8;
+  text-decoration: underline;
 }
 
 /* Zebra striping for rows */
