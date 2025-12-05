@@ -1741,10 +1741,7 @@ function initFeasibility() {
   }
 }
 
-// =========================================
 // INIT
-// =========================================
-
 async function initApp() {
   const summary = document.getElementById("summary");
 
@@ -1774,7 +1771,6 @@ async function initApp() {
     initFeasibility();
 
     if (permitRows.length) {
-      initPermitsFilters();
       filteredPermitRows = permitRows.slice();
       renderPermits();
     } else {
