@@ -82,9 +82,10 @@ body {
    ========================================= */
 
 .page-main {
-  max-width: 1180px;
+  max-width: none;
+  width: 100%;
   margin: 1.4rem auto 2rem;
-  padding: 0 1.1rem 0.25rem;
+  padding: 0 1.5rem 0.25rem;
   display: grid;
   grid-template-areas:
     "scorecard"
@@ -253,6 +254,7 @@ body {
   border-right: 1px dashed #e5e7eb;
   vertical-align: top;
   word-break: break-word;
+  white-space: pre-wrap;
   color: inherit;
   opacity: 1;
   font-weight: 600;

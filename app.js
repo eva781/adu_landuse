@@ -497,7 +497,7 @@ function formatParts(parts) {
     .map((p) => (p == null ? "" : String(p).trim()))
     .filter((p) => p && p !== "—");
   if (!clean.length) return "—";
-  return clean.join(" • ");
+  return clean.join("   ");
 }
 
 function sizedLabel(label, value) {
