@@ -929,32 +929,6 @@ function initFilters() {
   fillSelect("ownerOccFilter", COL.ownerOcc, "Any owner-occupancy");
 }
 
-
-  // Special behavior for city: when city changes,
-  // rebuild zone options *then* apply filters.
-  const cityEl = document.getElementById("cityFilter");
-  if (cityEl) {
-    cityEl.addEventListener("change", () => {
-      rebuildZoneFilterForCity();
-      const zoneEl = document.getElementById("zoneFilter");
-      if (zoneEl) zoneEl.value = "";
-      applyFilters();
-    });
-  }
-
-  // Other filters just trigger applyFilters as before
-  [
-    "zoneFilter",
-    "zoneTypeFilter",
-    "aduFilter",
-    "daduFilter",
-    "ownerOccFilter",
-  ].forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener("change", applyFilters);
-  });
-}
-
 // =========================================
 // CITY SCORECARDS (LETTER GRADES)
 // =========================================
