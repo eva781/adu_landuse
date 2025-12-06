@@ -1,254 +1,77 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>King County ADU Explorer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Your main stylesheet -->
-  <link rel="stylesheet" href="styles.css" />
-</head>
-<body>
-  <!-- Sticky dark header -->
-  <header class="site-header">
-    <div class="header-inner">
-      <div class="header-main">
-        <div class="header-kicker">King County · ADU &amp; DADU zoning</div>
-        <h1 class="site-title">King County ADU Explorer</h1>
-        <p class="site-subtitle">
-          Compare ADU and DADU regulations across municipalities, test feasibility on a specific lot,
-          and review built ADU permit trends.
-        </p>
+<!-- ============================
+     2) REGULATIONS TABLE + FILTERS
+     ============================ -->
+<section class="filters-card" aria-labelledby="regulations-title">
+  <div class="section-heading">
+    <div class="eyebrow">Data explorer</div>
+    <div>
+      <h2 id="regulations-title">ADU / DADU regulations by zone</h2>
+      <p class="section-help">
+        Filter the dataset and compare key zoning rules across King County jurisdictions.
+        Use the search to look across all columns.
+      </p>
+    </div>
+  </div>
+
+  <div class="reg-controls">
+    <div class="reg-filters">
+      <!-- Select All Checkbox -->
+      <label class="checkbox-label">
+        <input type="checkbox" id="selectAllCities">
+        <span>Select All Cities</span>
+      </label>
+
+      <!-- City Filter -->
+      <select id="cityFilter"></select>
+
+      <!-- Zone Filter -->
+      <select id="zoneFilter"></select>
+
+      <!-- Zone Type Filter -->
+      <select id="zoneTypeFilter"></select>
+
+      <!-- ADU Allowed Filter -->
+      <select id="aduFilter"></select>
+
+      <!-- DADU Allowed Filter -->
+      <select id="daduFilter"></select>
+
+      <!-- Owner Occupancy Filter -->
+      <select id="ownerOccFilter"></select>
+    </div>
+
+    <div class="reg-search-row">
+      <div class="search-group">
+        <label for="searchInput">Search all fields:</label>
+        <input id="searchInput" type="text" placeholder="Type city, zone, or keyword…" />
+      </div>
+
+      <div style="display: flex; gap: 0.75rem; align-items: center;">
+        <button id="searchRegulationsBtn" class="reg-search-btn" type="button">
+          Search Regulations
+        </button>
+        <button id="clearFilters" type="button">Clear Filters</button>
       </div>
     </div>
-  </header>
+  </div>
 
-  <main class="page-main">
-    <!-- ============================
-         1) CITY OVERVIEW / SCORECARDS
-         ============================ -->
-    <section class="scorecard" aria-labelledby="city-overview-title">
-      <h2 id="city-overview-title">City overview</h2>
-      <p class="scorecard-help">
-        Quick snapshot of how each city treats ADUs and DADUs based on your zoning dataset.
-      </p>
-      <!-- app.js will fill this -->
-      <div id="cityScorecards" class="scorecard-grid"></div>
-    </section>
+  <!-- Placeholder (shown before search) -->
+  <div class="reg-results-placeholder" id="regPlaceholder">
+    <h3>Ready to Search</h3>
+    <p>Select filters above, then click "Search Regulations" to view results.</p>
+  </div>
 
-    <!-- ============================
-         2) REGULATIONS TABLE + FILTERS
-         ============================ -->
-    <section class="filters-card" aria-labelledby="regulations-title">
-      <div class="section-heading">
-        <div class="eyebrow">Data explorer</div>
-        <div>
-          <h2 id="regulations-title">ADU / DADU regulations by zone</h2>
-          <p class="section-help">
-            Filter the dataset and compare key zoning rules across King County jurisdictions.
-            Use the search to look across all columns.
-          </p>
-        </div>
-      </div>
+  <!-- Table Wrapper (hidden initially) -->
+  <div class="reg-table-wrapper hidden" id="regTableWrapper">
+    <table class="reg-table" id="resultsTable">
+      <thead id="tableHead"></thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+    <p class="scroll-hint">← Scroll horizontally if needed to see all columns →</p>
+  </div>
 
-      <div class="reg-controls">
-        <div class="reg-search">
-          <label>
-            <span>Search all fields</span>
-            <input id="searchInput" type="text" placeholder="Type city, zone, or keyword…" />
-          </label>
-          <button id="clearFilters" class="ghost-button" type="button">Clear filters</button>
-        </div>
-
-        <div class="filters-grid">
-          <label>
-            <span>City</span>
-            <select id="cityFilter"></select>
-          </label>
-          <label>
-            <span>Zone</span>
-            <select id="zoneFilter"></select>
-          </label>
-          <label>
-            <span>Zone type</span>
-            <select id="zoneTypeFilter"></select>
-          </label>
-          <label>
-            <span>ADU allowed?</span>
-            <select id="aduFilter"></select>
-          </label>
-          <label>
-            <span>DADU allowed?</span>
-            <select id="daduFilter"></select>
-          </label>
-          <label>
-            <span>Owner occupancy</span>
-            <select id="ownerOccFilter"></select>
-          </label>
-        </div>
-      </div>
-
-      <div class="reg-table-wrapper">
-        <table class="reg-table" id="resultsTable">
-          <thead id="tableHead"></thead>
-          <tbody id="tableBody"></tbody>
-        </table>
-      </div>
-
-      <p id="summary" class="fine-print" aria-live="polite">
-        Data and diagrams are simplified for feasibility screening and do not replace a detailed code review
-        or conversation with planning staff.
-      </p>
-    </section>
-
-    <!-- ============================
-         3) LOT-LEVEL FEASIBILITY CHECKER
-         ============================ -->
-    <section class="feasibility-card" aria-labelledby="feasibility-title">
-      <h2 id="feasibility-title">Lot-level ADU feasibility checker</h2>
-      <p class="section-help">
-        Pick a city and zone from the dataset, then plug in a specific lot and target ADU size to see a quick
-        feasibility snapshot and a diagram of the parcel.
-      </p>
-
-      <div class="feasibility-layout">
-        <!-- Inputs + summary -->
-        <div>
-          <h3>Inputs</h3>
-          <div class="feasibility-grid">
-            <label>
-              <span>City</span>
-              <select id="feasCity"></select>
-            </label>
-            <label>
-              <span>Zone</span>
-              <select id="feasZone"></select>
-            </label>
-            <label>
-              <span>Lot size (sf)</span>
-              <input id="feasLotSize" type="number" min="0" inputmode="numeric" />
-            </label>
-            <label>
-              <span>Lot width (ft)</span>
-              <input id="feasLotWidth" type="number" min="0" inputmode="numeric" />
-            </label>
-            <label>
-              <span>Lot depth (ft)</span>
-              <input id="feasLotDepth" type="number" min="0" inputmode="numeric" />
-            </label>
-            <label>
-              <span>Existing home width (ft)</span>
-              <input id="feasHouseWidth" type="number" min="0" inputmode="numeric" />
-            </label>
-            <label>
-              <span>Existing home depth (ft)</span>
-              <input id="feasHouseDepth" type="number" min="0" inputmode="numeric" />
-            </label>
-            <label>
-              <span>Target ADU size (sf)</span>
-              <input id="feasADUSize" type="number" min="0" inputmode="numeric" />
-            </label>
-          </div>
-
-          <div class="feasibility-flags">
-            <label class="inline-flag">
-              <input id="feasTransit" type="checkbox" />
-              <span>ADU is within transit radius</span>
-            </label>
-            <label class="inline-flag">
-              <input id="feasAlley" type="checkbox" />
-              <span>Lot has alley access</span>
-            </label>
-          </div>
-
-          <button id="runFeasibility" class="primary-button" type="button">
-            Run feasibility check
-          </button>
-
-          <div id="feasibilitySummary" class="feasibility-summary"></div>
-        </div>
-
-        <!-- Diagram -->
-        <div class="feasibility-canvas">
-          <div class="parcel-card">
-            <h3>Parcel diagram</h3>
-            <p class="parcel-howto">
-              Drag and resize the existing home and ADU boxes; lot width and depth can also be adjusted
-              using the green handles. Labels update as the shapes change.
-            </p>
-            <div id="feasDiagram"></div>
-          </div>
-        </div>
-      </div>
-
-      <div id="feasibilityDetails" class="feasibility-details"></div>
-    </section>
-
-    <!-- ============================
-         4) ADU PERMITS & PRODUCTION
-         ============================ -->
-    <section class="permits-card" aria-labelledby="permits-title">
-      <div class="section-heading">
-        <div class="eyebrow">Production tracking</div>
-        <div>
-          <h2 id="permits-title">ADU permits &amp; production</h2>
-          <p class="section-help">
-            Historic ADU permit counts by jurisdiction, based on your permits CSV. Use the filters to focus
-            on a specific city or time period.
-          </p>
-        </div>
-      </div>
-
-      <div class="permits-filters">
-        <label>
-          <span>City</span>
-          <select id="permitsCityFilter"></select>
-        </label>
-        <label>
-          <span>Approval year</span>
-          <select id="permitsYearFilter"></select>
-        </label>
-        <button id="permitsClearFilters" class="ghost-button" type="button">
-          Clear permit filters
-        </button>
-      </div>
-
-      <div id="permitsSummary" class="permits-summary"></div>
-
-      <div class="table-card">
-        <div class="table-wrapper">
-          <table class="reg-table" id="permitsTable">
-            <thead>
-              <tr>
-                <th>City</th>
-                <th>Project</th>
-                <th>ADU type</th>
-                <th>Status</th>
-                <th>Size (sf)</th>
-                <th>Zone</th>
-                <th>Approval date</th>
-                <th>Permit #</th>
-                <th>Parcel link</th>
-              </tr>
-            </thead>
-            <tbody id="permitsTableBody"></tbody>
-          </table>
-          <div id="permitsEmpty" class="empty-state" aria-live="polite" hidden>
-            <div class="empty-title">No permits found</div>
-            <p class="empty-copy">Refine or clear the filters to bring permit records back into view.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <footer class="page-footer">
-    <p class="fine-print">
-      Data and diagrams are simplified for feasibility screening and do not replace a detailed code review
-      or conversation with planning staff.
-    </p>
-  </footer>
-
-  <!-- Your JS app (already written) -->
-  <script src="app.js" defer></script>
-</body>
-</html>
+  <p id="summary" class="fine-print" aria-live="polite">
+    Data and diagrams are simplified for feasibility screening and do not replace a detailed code review
+    or conversation with planning staff.
+  </p>
+</section>
