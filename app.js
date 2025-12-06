@@ -446,7 +446,6 @@ function buildTableHeader() {
 function renderTable() {
   const tbody = document.getElementById("tableBody");
   const summary = document.getElementById("summary");
-  const emptyState = document.getElementById("tableEmpty");
   if (!tbody) return;
 
   tbody.innerHTML = "";
@@ -467,11 +466,8 @@ function renderTable() {
     td.textContent = "No results. Adjust or clear your filters.";
     tr.appendChild(td);
     tbody.appendChild(tr);
-    if (emptyState) emptyState.hidden = false;
     return;
   }
-
-  if (emptyState) emptyState.hidden = true;
 
   filteredRows.forEach((row) => {
     const tr = document.createElement("tr");
@@ -508,6 +504,22 @@ function sizedLabel(label, value) {
   const text = value == null ? "" : String(value).trim();
   if (!text) return "";
   return `${label}: ${text}`;
+}
+
+function renderCodeLink(row) {
+  // Some jurisdictions may eventually include a code citation / URL column.
+  // Gracefully handle cases where the column is missing or blank so the UI
+  // still renders instead of throwing a ReferenceError (which previously left
+  // the entire table empty).
+  const url = get(row, COL.codeLink);
+  if (!url) return "—";
+
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.target = "_blank";
+  anchor.rel = "noreferrer";
+  anchor.textContent = "Open code";
+  return anchor;
 }
 
 function renderCodeMeta(row) {
@@ -569,6 +581,44 @@ function applyFilters() {
 
   renderTable();
 }
+
+function rebuildZoneFilterForCity() {
+  const zoneSelect = document.getElementById("zoneFilter");
+  if (!zoneSelect) return;
+
+  const cityVal = (document.getElementById("cityFilter").value || "").trim();
+  const zoneIdx = headerIndex(COL.zone);
+  const cityIdx = headerIndex(COL.city);
+
+  if (zoneIdx === -1) return;
+
+  const zones = new Set();
+  rawRows.forEach((row) => {
+    const zone = row[zoneIdx];
+    const city = cityIdx !== -1 ? row[cityIdx] : "";
+    if (!zone) return;
+    if (cityVal && city !== cityVal) return;
+    zones.add(zone);
+  });
+
+  const sortedZones = Array.from(zones).sort((a, b) => a.localeCompare(b));
+
+  zoneSelect.innerHTML = "";
+
+  const anyOpt = document.createElement("option");
+  anyOpt.value = "";
+  anyOpt.textContent = cityVal
+    ? "All zones in selected city"
+    : "All zones";
+  zoneSelect.appendChild(anyOpt);
+
+  sortedZones.forEach((zone) => {
+    const opt = document.createElement("option");
+    opt.value = zone;
+    opt.textContent = zone;
+    zoneSelect.appendChild(opt);
+  });
+}
 function initFilters() {
   // City is still built from the CSV
   fillSelect("cityFilter", COL.city, "All cities");
@@ -623,19 +673,6 @@ function initFilters() {
 
   // Other filters just trigger applyFilters as before
   [
-    "zoneFilter",
-    "zoneTypeFilter",
-    "aduFilter",
-    "daduFilter",
-    "ownerOccFilter",
-  ].forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener("change", applyFilters);
-  });
-}
-
-  [
-    "cityFilter",
     "zoneFilter",
     "zoneTypeFilter",
     "aduFilter",
