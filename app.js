@@ -442,37 +442,18 @@ const DISPLAY_COLUMNS = [
 // ==========================================
 // REGULATIONS TABLE (FULL CSV VIEW)
 // ==========================================
+
+// Use existing zoning table layout (DISPLAY_COLUMNS) for regulations search
 function buildTable(filteredData) {
-  const thead = document.getElementById("tableHead");
-  const tbody = document.getElementById("tableBody");
-  if (!thead || !tbody) return;
+  // Take the filtered CSV rows and feed them into the existing renderer
+  filteredRows = Array.isArray(filteredData) ? filteredData : [];
 
-  // Clear existing content
-  thead.innerHTML = "";
-  tbody.innerHTML = "";
+  // Always rebuild header from DISPLAY_COLUMNS so formatting stays consistent
+  buildTableHeader();
 
-  // If no data, show placeholder and hide table wrapper
-  if (!filteredData || filteredData.length === 0) {
-    if (regPlaceholder) {
-      regPlaceholder.innerHTML =
-        '<h3>No Results Found</h3><p>Try adjusting your filters or search terms.</p>';
-      regPlaceholder.style.display = "block";
-    }
-    if (regTableWrapper) {
-      regTableWrapper.classList.add("hidden");
-    }
-
-    // Also put a simple empty-state row in the table as a fallback
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = headers.length || 1;
-    td.className = "table-empty-row";
-    td.textContent = "No results. Adjust or clear your filters.";
-    tr.appendChild(td);
-    tbody.appendChild(tr);
-
-    return;
-  }
+  // Render rows + handle placeholder/wrapper
+  renderTable();
+}
 
   // Hide placeholder, show table
   if (regPlaceholder) {
@@ -537,7 +518,6 @@ function buildTableHeader() {
 
   thead.appendChild(tr);
 }
-
 function renderTable() {
   const tbody = document.getElementById("tableBody");
   const summary = document.getElementById("summary");
@@ -545,15 +525,30 @@ function renderTable() {
 
   tbody.innerHTML = "";
 
+  const total = rawRows.length || 0;
+  const count = filteredRows.length || 0;
+
+  // Summary text
   if (summary) {
-    const countText =
-      filteredRows.length === rawRows.length
-        ? `${filteredRows.length} zoning rows shown`
-        : `${filteredRows.length} of ${rawRows.length} zoning rows shown`;
-    summary.textContent = countText;
+    if (count === 0) {
+      summary.textContent =
+        "No matching regulations. Adjust or clear your filters.";
+    } else if (total && count !== total) {
+      summary.textContent = `Showing ${count} regulation(s) (of ${total})`;
+    } else {
+      summary.textContent = `Showing ${count} regulation(s)`;
+    }
   }
 
-  if (!filteredRows.length) {
+  // No results → hide table, show placeholder
+  if (!count) {
+    if (regTableWrapper) regTableWrapper.classList.add("hidden");
+    if (regPlaceholder) {
+      regPlaceholder.style.display = "block";
+      regPlaceholder.innerHTML =
+        '<h3>No Results Found</h3><p>Try adjusting your filters or search terms.</p>';
+    }
+
     const tr = document.createElement("tr");
     const td = document.createElement("td");
     td.colSpan = DISPLAY_COLUMNS.length;
@@ -564,6 +559,11 @@ function renderTable() {
     return;
   }
 
+  // We *do* have rows → show table, hide placeholder
+  if (regTableWrapper) regTableWrapper.classList.remove("hidden");
+  if (regPlaceholder) regPlaceholder.style.display = "none";
+
+  // Render using your curated DISPLAY_COLUMNS (keeps the nice formatting)
   filteredRows.forEach((row) => {
     const tr = document.createElement("tr");
 
@@ -581,6 +581,7 @@ function renderTable() {
     tbody.appendChild(tr);
   });
 }
+
 
 function formatValue(value) {
   const text = value == null ? "" : String(value).trim();
