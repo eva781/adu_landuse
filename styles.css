@@ -1714,3 +1714,28 @@ button {
     padding: 0 2rem;
   }
 }
+/* =========================================
+   REGULATIONS TABLE LAYOUT OVERRIDES
+   ========================================= */
+
+/* Make the regs wrapper span the full card width */
+.reg-table-wrapper {
+  width: 100%;
+  max-width: none;
+}
+
+/* Let the table breathe horizontally */
+.reg-table {
+  width: 100%;
+  /* table should at least be wide enough that columns aren’t cramped;
+     adjust 1200px up/down if you want more/less width. */
+  min-width: 1200px;
+  table-layout: auto; /* let browser size columns based on content */
+}
+/* Make text wrap more naturally in regs table cells */
+.reg-table thead th,
+.reg-table tbody td {
+  white-space: normal;    /* regular text wrapping */
+  word-break: normal;     /* only break on word boundaries */
+  overflow-wrap: break-word; /* still allow breaking long URLs if needed */
+}
