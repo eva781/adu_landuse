@@ -988,7 +988,7 @@ button {
    ========================================= */
 
 .table-card {
-  padding-top: 0.8rem;
+  padding-top: 0.5rem;
 }
 
 .table-card h2 {
@@ -997,7 +997,7 @@ button {
 
 .table-wrapper {
   position: relative;
-  max-height: 200px;
+  max-height: 50px;
   overflow: auto;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
