@@ -7,6 +7,15 @@ const CSV_URL = "data.csv";
 const PERMITS_URL = "adu_permits.csv";
 
 let headers = [];
+// New DOM refs for regulations table UI
+let selectAllCheckbox = null;
+let searchRegulationsBtn = null;
+let regPlaceholder = null;
+let regTableWrapper = null;
+
+// Track if initial load has happened
+let initialDataLoaded = false;
+
 let rawRows = [];
 let filteredRows = [];
 
@@ -178,6 +187,9 @@ async function loadZoningData() {
     row.some((cell) => cell && cell.trim() !== "")
   );
   filteredRows = rawRows.slice();
+    // Mark that initial zoning data is loaded
+  initialDataLoaded = true;
+
 }
 
 async function loadPermitsData() {
@@ -427,7 +439,90 @@ const DISPLAY_COLUMNS = [
   },
   { label: "Code link", render: (row) => renderCodeLink(row) },
 ];
+// ==========================================
+// REGULATIONS TABLE (FULL CSV VIEW)
+// ==========================================
+function buildTable(filteredData) {
+  const thead = document.getElementById("tableHead");
+  const tbody = document.getElementById("tableBody");
+  if (!thead || !tbody) return;
 
+  // Clear existing content
+  thead.innerHTML = "";
+  tbody.innerHTML = "";
+
+  // If no data, show placeholder and hide table wrapper
+  if (!filteredData || filteredData.length === 0) {
+    if (regPlaceholder) {
+      regPlaceholder.innerHTML =
+        '<h3>No Results Found</h3><p>Try adjusting your filters or search terms.</p>';
+      regPlaceholder.style.display = "block";
+    }
+    if (regTableWrapper) {
+      regTableWrapper.classList.add("hidden");
+    }
+
+    // Also put a simple empty-state row in the table as a fallback
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = headers.length || 1;
+    td.className = "table-empty-row";
+    td.textContent = "No results. Adjust or clear your filters.";
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+
+    return;
+  }
+
+  // Hide placeholder, show table
+  if (regPlaceholder) {
+    regPlaceholder.style.display = "none";
+  }
+  if (regTableWrapper) {
+    regTableWrapper.classList.remove("hidden");
+  }
+
+  // Build table header from CSV headers
+  const headerRow = document.createElement("tr");
+  headers.forEach((header) => {
+    const th = document.createElement("th");
+    th.textContent = header;
+    headerRow.appendChild(th);
+  });
+  thead.appendChild(headerRow);
+
+  // Build table body from CSV rows
+  filteredData.forEach((row) => {
+    const tr = document.createElement("tr");
+
+    headers.forEach((header, idx) => {
+      const td = document.createElement("td");
+      const value = row[idx] || "";
+      const headerLower = header.toLowerCase();
+
+      // Treat URL/link/code columns as links
+      if (
+        headerLower.includes("link") ||
+        headerLower.includes("code") ||
+        headerLower.includes("url")
+      ) {
+        const link = document.createElement("a");
+        link.href = value || "#";
+        link.textContent = value || "View";
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.className = "table-link";
+        td.appendChild(link);
+      } else {
+        td.textContent = value || "—";
+      }
+
+      tr.appendChild(td);
+    });
+
+    tbody.appendChild(tr);
+  });
+}
 function buildTableHeader() {
   const thead = document.getElementById("tableHead");
   if (!thead) return;
@@ -619,6 +714,109 @@ function rebuildZoneFilterForCity() {
     zoneSelect.appendChild(opt);
   });
 }
+// ==========================================
+// PERFORM SEARCH FUNCTION (REGULATIONS TABLE)
+// ==========================================
+function performRegulationsSearch() {
+  if (!initialDataLoaded || !rawRows || !rawRows.length) {
+    if (regPlaceholder) {
+      regPlaceholder.innerHTML =
+        "<h3>Data not loaded yet</h3><p>Please reload the page and try again.</p>";
+      regPlaceholder.style.display = "block";
+    }
+    return;
+  }
+
+  // Get filter values
+  const cityFilterValue =
+    (document.getElementById("cityFilter")?.value || "").trim();
+  const zoneFilterValue =
+    (document.getElementById("zoneFilter")?.value || "").trim();
+  const zoneTypeValue =
+    (document.getElementById("zoneTypeFilter")?.value || "").trim();
+  const aduValue =
+    (document.getElementById("aduFilter")?.value || "").trim();
+  const daduValue =
+    (document.getElementById("daduFilter")?.value || "").trim();
+  const ownerOccValue =
+    (document.getElementById("ownerOccFilter")?.value || "").trim();
+  const searchValue = (
+    document.getElementById("searchInput")?.value || ""
+  )
+    .toLowerCase()
+    .trim();
+  const selectAll = !!selectAllCheckbox?.checked;
+
+  // Cache indices
+  const cityIdx = headerIndex(COL.city);
+  const zoneIdx = headerIndex(COL.zone);
+  const zoneTypeIdx = headerIndex(COL.zoneType);
+  const aduIdx = headerIndex(COL.aduAllowed);
+  const daduIdx = headerIndex(COL.daduAllowed);
+  const ownerIdx = headerIndex(COL.ownerOcc);
+
+  let filteredData = rawRows.slice();
+
+  // City filter (unless "Select All" is checked)
+  if (!selectAll && cityFilterValue && cityIdx !== -1) {
+    filteredData = filteredData.filter(
+      (row) => (row[cityIdx] || "").trim() === cityFilterValue
+    );
+  }
+
+  // Zone filter
+  if (zoneFilterValue && zoneIdx !== -1) {
+    filteredData = filteredData.filter(
+      (row) => (row[zoneIdx] || "").trim() === zoneFilterValue
+    );
+  }
+
+  // Zone type filter
+  if (zoneTypeValue && zoneTypeIdx !== -1) {
+    filteredData = filteredData.filter(
+      (row) => (row[zoneTypeIdx] || "").trim() === zoneTypeValue
+    );
+  }
+
+  // ADU filter
+  if (aduValue && aduIdx !== -1) {
+    filteredData = filteredData.filter(
+      (row) => (row[aduIdx] || "").trim() === aduValue
+    );
+  }
+
+  // DADU filter
+  if (daduValue && daduIdx !== -1) {
+    filteredData = filteredData.filter(
+      (row) => (row[daduIdx] || "").trim() === daduValue
+    );
+  }
+
+  // Owner occupancy filter
+  if (ownerOccValue && ownerIdx !== -1) {
+    filteredData = filteredData.filter(
+      (row) => (row[ownerIdx] || "").trim() === ownerOccValue
+    );
+  }
+
+  // Free-text search across entire row
+  if (searchValue) {
+    filteredData = filteredData.filter((row) => {
+      const combined = row.join(" ").toLowerCase();
+      return combined.includes(searchValue);
+    });
+  }
+
+  // Render regulations table
+  buildTable(filteredData);
+
+  // Update summary text
+  const summary = document.getElementById("summary");
+  if (summary) {
+    summary.textContent = `Showing ${filteredData.length} regulation(s)`;
+  }
+}
+
 function initFilters() {
   // City is still built from the CSV
   fillSelect("cityFilter", COL.city, "All cities");
@@ -1801,18 +1999,24 @@ async function initApp() {
   }
 
   try {
-    buildTableHeader();
-    renderCityScorecards();
+    // Populate dropdowns
     initFilters();
-    applyFilters();
+
+    // City scorecards & feasibility diagram still work off rawRows
+    renderCityScorecards();
     initFeasibility();
 
+    // Permits feed
     if (permitRows.length) {
+      initPermitsFilters();
       filteredPermitRows = permitRows.slice();
       renderPermits();
     } else {
       renderPermits();
     }
+
+    // New regulations UI (search button, select-all, placeholder/table wrapper)
+    initRegulationsUI();
   } catch (err) {
     console.error("Error initializing UI:", err);
     if (summary && !summary.textContent) {
