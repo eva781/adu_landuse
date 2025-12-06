@@ -210,7 +210,6 @@ body {
 .reg-table-wrapper {
   border-radius: 14px;
   border: 1px solid #e5e7eb;
-  background: #ffffff;
   overflow-x: auto;
   position: relative;
 }
