@@ -85,7 +85,7 @@ body {
   max-width: none;
   width: 100%;
   margin: 1.4rem auto 2rem;
-  padding: 0 1.5rem 0.25rem;
+  padding: 0 1.4rem 0.2rem;
   display: grid;
   grid-template-areas:
     "scorecard"
@@ -212,17 +212,26 @@ body {
   border-radius: 14px;
   border: 1px solid #e5e7eb;
   background: transparent;
-  overflow-x: auto;
+  overflow-x: scroll;
   position: relative;
 }
 
 .reg-table {
-  width: 100%;
+  width: max(100%,1400px);
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 0.88rem;
   color: #000000;
+   <p class="scroll-hint">← Scroll horizontally to see all columns →</p>
+   .scroll-hint {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+
 }
 
 /* Sticky header */
@@ -988,7 +997,7 @@ button {
 
 .table-wrapper {
   position: relative;
-  max-height: 430px;
+  max-height: 200px;
   overflow: auto;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
