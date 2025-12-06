@@ -212,6 +212,9 @@ body {
   border: 1px solid #e5e7eb;
   overflow-x: auto;
   position: relative;
+  color: #000000;
+  opacity: 1;
+  filter: none;
 }
 
 .reg-table {
@@ -229,7 +232,7 @@ body {
   top: 0;
   z-index: 1;
   background: #f3f4ff;
-  color: #1f2937;
+  color: #000000;
   font-weight: 600;
   padding: 0.5rem 0.6rem;
   border-bottom: 1px solid #e5e7eb;
