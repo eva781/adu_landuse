@@ -82,9 +82,10 @@ body {
    ========================================= */
 
 .page-main {
-  max-width: 1180px;
+  max-width: none;
+  width: 100%;
   margin: 1.4rem auto 2rem;
-  padding: 0 1.1rem 0.25rem;
+  padding: 0 1.5rem 0.25rem;
   display: grid;
   grid-template-areas:
     "scorecard"
@@ -210,7 +211,7 @@ body {
 .reg-table-wrapper {
   border-radius: 14px;
   border: 1px solid #e5e7eb;
-  background: #ffffff;
+  background: transparent;
   overflow-x: auto;
   position: relative;
 }
@@ -220,7 +221,8 @@ body {
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 0.82rem;
+  font-size: 0.88rem;
+  color: #000000;
 }
 
 /* Sticky header */
@@ -245,12 +247,36 @@ body {
 }
 
 /* Body cells */
+.reg-table thead th,
 .reg-table tbody td {
   padding: 0.4rem 0.6rem;
   border-bottom: 1px solid #f3f4f6;
   border-right: 1px dashed #e5e7eb;
   vertical-align: top;
   word-break: break-word;
+  white-space: pre-wrap;
+  color: inherit;
+  opacity: 1;
+  font-weight: 600;
+}
+
+.reg-table,
+.reg-table * {
+  color: #000000 !important;
+  opacity: 1 !important;
+  filter: none !important;
+  mix-blend-mode: normal !important;
+  text-shadow: none !important;
+}
+
+.reg-table a {
+  color: #2563eb;
+}
+
+.reg-table a:hover,
+.reg-table a:focus {
+  color: #1d4ed8;
+  text-decoration: underline;
 }
 
 /* Zebra striping for rows */
