@@ -210,6 +210,7 @@ body {
 .reg-table-wrapper {
   border-radius: 14px;
   border: 1px solid #e5e7eb;
+  background: transparent;
   overflow-x: auto;
   position: relative;
 }
@@ -219,8 +220,8 @@ body {
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 0.82rem;
-  color: var(--text-main);
+  font-size: 0.88rem;
+  color: #000000;
 }
 
 /* Sticky header */
@@ -253,6 +254,17 @@ body {
   vertical-align: top;
   word-break: break-word;
   color: inherit;
+  opacity: 1;
+  font-weight: 600;
+}
+
+.reg-table,
+.reg-table * {
+  color: #000000 !important;
+  opacity: 1 !important;
+  filter: none !important;
+  mix-blend-mode: normal !important;
+  text-shadow: none !important;
 }
 
 .reg-table a {

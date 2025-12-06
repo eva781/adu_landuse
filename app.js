@@ -446,7 +446,6 @@ function buildTableHeader() {
 function renderTable() {
   const tbody = document.getElementById("tableBody");
   const summary = document.getElementById("summary");
-  const emptyState = document.getElementById("tableEmpty");
   if (!tbody) return;
 
   tbody.innerHTML = "";
@@ -467,11 +466,8 @@ function renderTable() {
     td.textContent = "No results. Adjust or clear your filters.";
     tr.appendChild(td);
     tbody.appendChild(tr);
-    if (emptyState) emptyState.hidden = false;
     return;
   }
-
-  if (emptyState) emptyState.hidden = true;
 
   filteredRows.forEach((row) => {
     const tr = document.createElement("tr");
