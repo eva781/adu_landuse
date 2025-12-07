@@ -785,6 +785,64 @@ function computeCityScore(cityName, rows) {
   return { score, grade, aduYes, daduYes, n };
 }
 
+// ADD THIS ENTIRE FUNCTION HERE:
+function renderCityScorecards() {
+  const container = document.getElementById("cityScorecards");
+  if (!container || !state.zoning.byCity.size) return;
+
+  container.innerHTML = "";
+
+  const cities = Array.from(state.zoning.byCity.keys()).sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: "base" })
+  );
+
+  cities.forEach((city) => {
+    const rows = state.zoning.byCity.get(city) || [];
+    const metrics = computeCityScore(city, rows);
+
+    // FIXED: Use scorecard-item class instead of scorecard
+    const card = document.createElement("article");
+    card.className = "scorecard-item";
+
+    card.innerHTML = `
+      <header class="scorecard-header">
+        <h3 class="scorecard-city">${city}</h3>
+        <div class="scorecard-grade">${metrics.grade}</div>
+      </header>
+      <div class="scorecard-bar-wrap">
+        <div class="scorecard-bar" style="width: ${metrics.score}%"></div>
+      </div>
+      <ul class="scorecard-bullets">
+        <li>ADU allowed in ${metrics.aduYes} of ${metrics.n} zones</li>
+        <li>DADU allowed in ${metrics.daduYes} of ${metrics.n} zones</li>
+        <li>Flexibility score: ${metrics.score}/100</li>
+      </ul>
+    `;
+
+    // Add click handler to the entire card
+    card.style.cursor = 'pointer';
+    card.addEventListener('click', function() {
+      const cityFilter = document.getElementById("cityFilter");
+      if (cityFilter) {
+        cityFilter.value = city;
+        if (state.ui.selectAllCities) {
+          state.ui.selectAllCities.checked = false;
+          cityFilter.disabled = false;
+        }
+      }
+      performRegulationsSearch();
+      
+      // Scroll to regulations section
+      const regsSection = document.querySelector('.filters-card');
+      if (regsSection && regsSection.scrollIntoView) {
+        regsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+
+    container.appendChild(card);
+  });
+}
+
 // =========================================
 // LOT-LEVEL FEASIBILITY (HIGH-LEVEL CHECK)
 // =========================================
