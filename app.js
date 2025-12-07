@@ -105,42 +105,80 @@ const state = {
 // CSV PARSING
 // =========================================
 
-// Basic but robust CSV parser supporting quoted fields and commas.
+// Fully RFC4180-style CSV parser:
+// - Handles commas inside quoted fields
+// - Handles embedded newlines inside quoted fields
+// - Handles escaped quotes ("") inside quoted fields
 function parseCSV(text) {
+  // Strip BOM if present
+  if (text.charCodeAt(0) === 0xfeff) {
+    text = text.slice(1);
+  }
+
   const rows = [];
   let row = [];
   let value = "";
   let insideQuotes = false;
+  let i = 0;
+  const n = text.length;
 
-  for (let i = 0; i < text.length; i++) {
+  while (i < n) {
     const c = text[i];
 
-    if (c === '"') {
-      const next = text[i + 1];
-      if (insideQuotes && next === '"') {
-        // Escaped quote
-        value += '"';
-        i++;
+    if (insideQuotes) {
+      if (c === '"') {
+        const next = text[i + 1];
+        if (next === '"') {
+          // Escaped quote ("")
+          value += '"';
+          i += 2;
+        } else {
+          // Closing quote
+          insideQuotes = false;
+          i += 1;
+        }
       } else {
-        insideQuotes = !insideQuotes;
+        // Regular character inside quotes
+        value += c;
+        i += 1;
       }
-    } else if (c === "," && !insideQuotes) {
-      row.push(value);
-      value = "";
-    } else if ((c === "\n" || c === "\r") && !insideQuotes) {
-      if (value !== "" || row.length) {
+    } else {
+      if (c === '"') {
+        // Start of quoted field
+        insideQuotes = true;
+        i += 1;
+      } else if (c === ",") {
+        // Field separator
+        row.push(value);
+        value = "";
+        i += 1;
+      } else if (c === "\r" || c === "\n") {
+        // End of record
         row.push(value);
         value = "";
         rows.push(row);
         row = [];
+
+        // Handle CRLF
+        if (c === "\r" && i + 1 < n && text[i + 1] === "\n") {
+          i += 2;
+        } else {
+          i += 1;
+        }
+
+        // Skip any extra blank line breaks
+        while (i < n && (text[i] === "\r" || text[i] === "\n")) {
+          i += 1;
+        }
+      } else {
+        // Regular character
+        value += c;
+        i += 1;
       }
-      // swallow CRLF pair
-      if (c === "\r" && text[i + 1] === "\n") i++;
-    } else {
-      value += c;
     }
   }
 
+  // Flush last field / row
   if (value !== "" || row.length) {
     row.push(value);
     rows.push(row);
