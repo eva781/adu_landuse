@@ -67,10 +67,50 @@ body::before {
   z-index: 0;
 }
 
+
 /* =========================================
    HEADER
    ========================================= */
 
+/* Header structure fixes */
+.header-main {
+  flex: 1;
+}
+
+.header-kicker {
+  font-size: 0.8rem;
+  color: #b8c8b8;
+  margin-bottom: 0.3rem;
+  letter-spacing: 0.05em;
+}
+
+.site-title {
+  margin: 0 0 0.3rem;
+  font-size: clamp(1.5rem, 2.5vw, 2rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, #ffffff 0%, #d4ddd4 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.site-subtitle {
+  margin: 0;
+  color: #b8c8b8;
+  font-size: 0.9rem;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  line-height: 1.5;
+}
+
+/* Fine print class */
+.fine-print {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 1rem;
+  line-height: 1.6;
+}
 .site-header {
   background: var(--bg-header);
   color: var(--text-inverse);
@@ -1714,28 +1754,32 @@ button {
     padding: 0 2rem;
   }
 }
-/* =========================================
-   REGULATIONS TABLE LAYOUT OVERRIDES
-   ========================================= */
 
-/* Make the regs wrapper span the full card width */
-.reg-table-wrapper {
+/* Regulations table - full width, responsive */
+.filters-card .reg-table-wrapper {
   width: 100%;
-  max-width: none;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
-/* Let the table breathe horizontally */
-.reg-table {
+.filters-card .reg-table {
   width: 100%;
-  /* table should at least be wide enough that columns aren’t cramped;
-     adjust 1200px up/down if you want more/less width. */
-  min-width: 1200px;
-  table-layout: auto; /* let browser size columns based on content */
+  min-width: 100%;
+  table-layout: auto;
 }
-/* Make text wrap more naturally in regs table cells */
-.reg-table thead th,
-.reg-table tbody td {
-  white-space: normal;    /* regular text wrapping */
-  word-break: normal;     /* only break on word boundaries */
-  overflow-wrap: break-word; /* still allow breaking long URLs if needed */
+
+.filters-card .reg-table thead th,
+.filters-card .reg-table tbody td {
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: break-word;
+  padding: 1rem 1.2rem;
+  min-width: 140px;
+}
+
+/* First column narrower */
+.filters-card .reg-table thead th:first-child,
+.filters-card .reg-table tbody td:first-child {
+  min-width: 100px;
+  max-width: 140px;
 }
