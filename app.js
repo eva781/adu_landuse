@@ -785,7 +785,6 @@ function computeCityScore(cityName, rows) {
   return { score, grade, aduYes, daduYes, n };
 }
 
-// ADD THIS ENTIRE FUNCTION HERE:
 function renderCityScorecards() {
   const container = document.getElementById("cityScorecards");
   if (!container || !state.zoning.byCity.size) return;
