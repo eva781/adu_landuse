@@ -104,14 +104,13 @@ const state = {
 // =========================================
 // CSV PARSING
 // =========================================
-
 // Fully RFC4180-style CSV parser:
 // - Handles commas inside quoted fields
 // - Handles embedded newlines inside quoted fields
 // - Handles escaped quotes ("") inside quoted fields
 function parseCSV(text) {
   // Strip BOM if present
-  if (text.charCodeAt(0) === 0xfeff) {
+  if (text && text.charCodeAt(0) === 0xfeff) {
     text = text.slice(1);
   }
 
@@ -127,7 +126,7 @@ function parseCSV(text) {
 
     if (insideQuotes) {
       if (c === '"') {
-        const next = text[i + 1];
+        const next = i + 1 < n ? text[i + 1] : null;
         if (next === '"') {
           // Escaped quote ("")
           value += '"';
@@ -138,17 +137,17 @@ function parseCSV(text) {
           i += 1;
         }
       } else {
-        // Regular character inside quotes
+        // Any character inside quotes, including newlines and commas
         value += c;
         i += 1;
       }
     } else {
       if (c === '"') {
-        // Start of quoted field
+        // Opening quote
         insideQuotes = true;
         i += 1;
       } else if (c === ",") {
-        // Field separator
+        // Field terminator
         row.push(value);
         value = "";
         i += 1;
@@ -166,19 +165,19 @@ function parseCSV(text) {
           i += 1;
         }
 
-        // Skip any extra blank line breaks
+        // Skip any additional newlines
         while (i < n && (text[i] === "\r" || text[i] === "\n")) {
           i += 1;
         }
       } else {
-        // Regular character
+        // Regular character outside quotes
         value += c;
         i += 1;
       }
     }
   }
 
-  // Flush last field / row
+  // Flush last row if there’s remaining content
   if (value !== "" || row.length) {
     row.push(value);
     rows.push(row);
@@ -186,6 +185,7 @@ function parseCSV(text) {
 
   return rows;
 }
+
 
 // =========================================
 // ZONING DATA LOADING & INDEXING
