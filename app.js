@@ -471,6 +471,8 @@ const DISPLAY_COLUMNS = [
   },
 ];
 
+// REPLACE YOUR buildTableHeader AND renderRegulationsTable FUNCTIONS WITH THESE:
+
 function buildTableHeader() {
   const thead = document.getElementById("tableHead");
   if (!thead) return;
@@ -488,32 +490,30 @@ function buildTableHeader() {
 function renderRegulationsTable() {
   const tbody = document.getElementById("tableBody");
   const summary = state.ui.summaryEl || document.getElementById("summary");
-  if (!tbody) return;
+  const tableWrapper = state.ui.tableWrapper || document.getElementById("regTableWrapper");
+  const placeholder = state.ui.placeholder || document.getElementById("regPlaceholder");
+  
+  if (!tbody) {
+    console.error("Table body element not found");
+    return;
+  }
 
   const rows = state.zoning.filteredRows || [];
   const total = state.zoning.rows.length;
 
+  // Clear existing content
   tbody.innerHTML = "";
 
   if (!rows.length) {
     // Hide table, show placeholder
-    if (state.ui.tableWrapper) {
-      state.ui.tableWrapper.classList.add("hidden");
+    if (tableWrapper) {
+      tableWrapper.classList.add("hidden");
     }
-    if (state.ui.placeholder) {
-      state.ui.placeholder.style.display = "block";
-      state.ui.placeholder.innerHTML =
+    if (placeholder) {
+      placeholder.style.display = "block";
+      placeholder.innerHTML =
         '<h3>No Results Found</h3><p>Try adjusting your filters or search terms.</p>';
     }
-
-    // Insert a single empty-state row for accessibility / layout
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = DISPLAY_COLUMNS.length;
-    td.className = "table-empty-row";
-    td.textContent = "No results. Adjust or clear your filters.";
-    tr.appendChild(td);
-    tbody.appendChild(tr);
 
     if (summary) {
       summary.textContent =
@@ -523,29 +523,36 @@ function renderRegulationsTable() {
   }
 
   // We have rows: show table, hide placeholder
-  if (state.ui.tableWrapper) {
-    state.ui.tableWrapper.classList.remove("hidden");
+  if (tableWrapper) {
+    tableWrapper.classList.remove("hidden");
   }
-  if (state.ui.placeholder) {
-    state.ui.placeholder.style.display = "none";
+  if (placeholder) {
+    placeholder.style.display = "none";
   }
 
+  // Render each row
   rows.forEach((row) => {
     const tr = document.createElement("tr");
     DISPLAY_COLUMNS.forEach((col) => {
       const td = document.createElement("td");
-      const rendered = col.render(row);
-      td.textContent = rendered || "—";
+      try {
+        const rendered = col.render(row);
+        td.textContent = rendered || "—";
+      } catch (error) {
+        console.error(`Error rendering column ${col.key}:`, error);
+        td.textContent = "—";
+      }
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
   });
 
+  // Update summary
   if (summary) {
     if (rows.length === total) {
-      summary.textContent = `Showing ${rows.length} regulation(s).`;
+      summary.textContent = `Showing all ${rows.length} regulation(s).`;
     } else {
-      summary.textContent = `Showing ${rows.length} regulation(s) (of ${total}).`;
+      summary.textContent = `Showing ${rows.length} of ${total} regulation(s).`;
     }
   }
 }
@@ -778,6 +785,8 @@ function computeCityScore(cityName, rows) {
   return { score, grade, aduYes, daduYes, n };
 }
 
+// REPLACE YOUR renderCityScorecards FUNCTION WITH THIS:
+
 function renderCityScorecards() {
   const container = document.getElementById("cityScorecards");
   if (!container || !state.zoning.byCity.size) return;
@@ -792,27 +801,48 @@ function renderCityScorecards() {
     const rows = state.zoning.byCity.get(city) || [];
     const metrics = computeCityScore(city, rows);
 
+    // FIXED: Use scorecard-item class instead of scorecard
     const card = document.createElement("article");
-    card.className = "scorecard";
+    card.className = "scorecard-item";
 
     card.innerHTML = `
       <header class="scorecard-header">
-        <h3>${city}</h3>
+        <h3 class="scorecard-city">${city}</h3>
         <div class="scorecard-grade">${metrics.grade}</div>
       </header>
-      <p class="scorecard-score">${metrics.score}/100 ADU flexibility</p>
-      <p class="scorecard-meta">
-        ADU allowed in ${metrics.aduYes} of ${metrics.n} zones ·
-        DADU allowed in ${metrics.daduYes} of ${metrics.n} zones
-      </p>
-      <button type="button" class="scorecard-btn" data-city="${city}">
-        View regulations
-      </button>
+      <div class="scorecard-bar-wrap">
+        <div class="scorecard-bar" style="width: ${metrics.score}%"></div>
+      </div>
+      <ul class="scorecard-bullets">
+        <li>ADU allowed in ${metrics.aduYes} of ${metrics.n} zones</li>
+        <li>DADU allowed in ${metrics.daduYes} of ${metrics.n} zones</li>
+        <li>Flexibility score: ${metrics.score}/100</li>
+      </ul>
     `;
+
+    // Add click handler to the entire card
+    card.style.cursor = 'pointer';
+    card.addEventListener('click', function() {
+      const cityFilter = document.getElementById("cityFilter");
+      if (cityFilter) {
+        cityFilter.value = city;
+        if (state.ui.selectAllCities) {
+          state.ui.selectAllCities.checked = false;
+          cityFilter.disabled = false;
+        }
+      }
+      performRegulationsSearch();
+      
+      // Scroll to regulations section
+      const regsSection = document.querySelector('.filters-card');
+      if (regsSection && regsSection.scrollIntoView) {
+        regsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
 
     container.appendChild(card);
   });
-
+}
   container.addEventListener("click", (e) => {
     const btn = e.target.closest(".scorecard-btn");
     if (!btn) return;
