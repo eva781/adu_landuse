@@ -1049,6 +1049,7 @@ function initPermitsFilters() {
   state.permits.yearCol = yearCol;
   state.permits.cityCol = cityCol;
 
+  // Populate year filter
   if (yearFilter && yearCol) {
     const idx = pHeaderIndex(yearCol);
     const years = new Set();
@@ -1070,6 +1071,7 @@ function initPermitsFilters() {
     });
   }
 
+  // Populate city filter
   if (cityFilter && cityCol) {
     const idx = pHeaderIndex(cityCol);
     const cities = new Set();
@@ -1093,17 +1095,29 @@ function initPermitsFilters() {
     });
   }
 
+  // Pagination + filter listeners
   const yearFilterEl = document.getElementById("permitsYearFilter");
   const cityFilterEl = document.getElementById("permitsCityFilter");
   const clearBtn = document.getElementById("permitsClearFilters");
+  const prevBtn = document.getElementById("permitsPrev");
+  const nextBtn = document.getElementById("permitsNext");
 
+  // Page size + initial page
+  state.permits.pageSize = 5;
+  if (typeof state.permits.currentPage !== "number") {
+    state.permits.currentPage = 1;
+  }
+
+  // Filters reset to page 1
   if (yearFilterEl) {
     yearFilterEl.addEventListener("change", () => {
+      state.permits.currentPage = 1;
       renderPermits();
     });
   }
   if (cityFilterEl) {
     cityFilterEl.addEventListener("change", () => {
+      state.permits.currentPage = 1;
       renderPermits();
     });
   }
@@ -1112,7 +1126,36 @@ function initPermitsFilters() {
       if (yearFilterEl) yearFilterEl.value = "";
       if (cityFilterEl) cityFilterEl.value = "";
       state.permits.filteredRows = state.permits.rows.slice();
+      state.permits.currentPage = 1;
       renderPermits();
+    });
+  }
+
+  // Prev / Next arrows
+  if (prevBtn) {
+    prevBtn.addEventListener("click", () => {
+      if (!state.initialized.permitsLoaded) return;
+      const current = state.permits.currentPage || 1;
+      if (current > 1) {
+        state.permits.currentPage = current - 1;
+        renderPermits();
+      }
+    });
+  }
+
+  if (nextBtn) {
+    nextBtn.addEventListener("click", () => {
+      if (!state.initialized.permitsLoaded) return;
+      const pageSize = state.permits.pageSize || 5;
+      const total =
+        (state.permits.filteredRows && state.permits.filteredRows.length) ||
+        state.permits.rows.length;
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      const current = state.permits.currentPage || 1;
+      if (current < totalPages) {
+        state.permits.currentPage = current + 1;
+        renderPermits();
+      }
     });
   }
 }
@@ -1121,6 +1164,9 @@ function renderPermits() {
   const tbody = document.getElementById("permitsTableBody");
   const summary = document.getElementById("permitsSummary");
   const emptyState = document.getElementById("permitsEmpty");
+  const prevBtn = document.getElementById("permitsPrev");
+  const nextBtn = document.getElementById("permitsNext");
+  const pageLabel = document.getElementById("permitsPageLabel");
 
   if (!tbody || !state.initialized.permitsLoaded) return;
 
@@ -1136,6 +1182,7 @@ function renderPermits() {
   const cityFilterVal =
     (document.getElementById("permitsCityFilter")?.value || "").trim();
 
+  // Apply filters
   if (yearCol && yearFilterVal) {
     const idx = pHeaderIndex(yearCol);
     filtered = filtered.filter(
@@ -1149,23 +1196,41 @@ function renderPermits() {
     );
   }
 
+  // Keep a copy of the current filtered set for pagination calculations
+  state.permits.filteredRows = filtered;
+
   tbody.innerHTML = "";
 
+  // No results
   if (!filtered.length) {
     if (emptyState) emptyState.hidden = false;
-    if (summary)
+    if (summary) {
       summary.textContent =
         "No permits match the selected filters in the current dataset.";
+    }
+    if (pageLabel) pageLabel.textContent = "No permits";
+    if (prevBtn) prevBtn.disabled = true;
+    if (nextBtn) nextBtn.disabled = true;
     return;
   }
 
   if (emptyState) emptyState.hidden = true;
 
-  // Respect a cap so we don't render tens of thousands of DOM nodes
-  const sliceCount = Math.min(filtered.length, MAX_PERMIT_ROWS);
-  const rowsToRender = filtered.slice(0, sliceCount);
+  // Pagination math
+  const pageSize = state.permits.pageSize || 5;
+  let currentPage = state.permits.currentPage || 1;
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  // Show up to first 6 columns for clarity
+  if (currentPage > totalPages) currentPage = totalPages;
+  if (currentPage < 1) currentPage = 1;
+  state.permits.currentPage = currentPage;
+
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, total);
+  const rowsToRender = filtered.slice(startIndex, endIndex);
+
+  // Render only the current "page"
   const maxCols = Math.min(headers.length, 6);
   rowsToRender.forEach((row) => {
     const tr = document.createElement("tr");
@@ -1177,14 +1242,21 @@ function renderPermits() {
     tbody.appendChild(tr);
   });
 
+  // Update summary + pagination UI
   if (summary) {
-    if (filtered.length > MAX_PERMIT_ROWS) {
-      summary.textContent = `Showing first ${sliceCount} permit(s). Refine filters to see a smaller subset.`;
-    } else {
-      summary.textContent = `${filtered.length} permit(s) shown.`;
-    }
+    summary.textContent = `Showing ${startIndex + 1}–${endIndex} of ${total} permit(s).`;
+  }
+  if (pageLabel) {
+    pageLabel.textContent = `Page ${currentPage} of ${totalPages}`;
+  }
+  if (prevBtn) {
+    prevBtn.disabled = currentPage <= 1;
+  }
+  if (nextBtn) {
+    nextBtn.disabled = currentPage >= totalPages;
   }
 }
+
 
 // =========================================
 // INIT
