@@ -102,6 +102,15 @@ const state = {
 };
 
 // =========================================
+// PERFORMANCE LIMITS
+// =========================================
+// To avoid the UI feeling "hung" on large CSVs, we cap how many rows
+// we render at once in heavy tables. The user can always narrow results
+// with filters or search.
+const MAX_REG_ROWS = 400;
+const MAX_PERMIT_ROWS = 400;
+
+// =========================================
 // CSV PARSING
 // =========================================
 // Fully RFC4180-style CSV parser:
@@ -471,8 +480,6 @@ const DISPLAY_COLUMNS = [
   },
 ];
 
-// REPLACE YOUR buildTableHeader AND renderRegulationsTable FUNCTIONS WITH THESE:
-
 function buildTableHeader() {
   const thead = document.getElementById("tableHead");
   if (!thead) return;
@@ -530,8 +537,12 @@ function renderRegulationsTable() {
     placeholder.style.display = "none";
   }
 
+  // Respect max row cap to keep the UI responsive on very large CSVs
+  const sliceCount = Math.min(rows.length, MAX_REG_ROWS);
+  const rowsToRender = rows.slice(0, sliceCount);
+
   // Render each row
-  rows.forEach((row) => {
+  rowsToRender.forEach((row) => {
     const tr = document.createElement("tr");
     DISPLAY_COLUMNS.forEach((col) => {
       const td = document.createElement("td");
@@ -549,8 +560,10 @@ function renderRegulationsTable() {
 
   // Update summary
   if (summary) {
-    if (rows.length === total) {
+    if (rows.length === total && rows.length <= MAX_REG_ROWS) {
       summary.textContent = `Showing all ${rows.length} regulation(s).`;
+    } else if (rows.length > MAX_REG_ROWS) {
+      summary.textContent = `Showing first ${sliceCount} of ${rows.length} matching regulation(s). Add filters to narrow further.`;
     } else {
       summary.textContent = `Showing ${rows.length} of ${total} regulation(s).`;
     }
@@ -1148,9 +1161,13 @@ function renderPermits() {
 
   if (emptyState) emptyState.hidden = true;
 
+  // Respect a cap so we don't render tens of thousands of DOM nodes
+  const sliceCount = Math.min(filtered.length, MAX_PERMIT_ROWS);
+  const rowsToRender = filtered.slice(0, sliceCount);
+
   // Show up to first 6 columns for clarity
   const maxCols = Math.min(headers.length, 6);
-  filtered.forEach((row) => {
+  rowsToRender.forEach((row) => {
     const tr = document.createElement("tr");
     for (let i = 0; i < maxCols; i++) {
       const td = document.createElement("td");
@@ -1161,7 +1178,11 @@ function renderPermits() {
   });
 
   if (summary) {
-    summary.textContent = `${filtered.length} permit(s) shown.`;
+    if (filtered.length > MAX_PERMIT_ROWS) {
+      summary.textContent = `Showing first ${sliceCount} permit(s). Refine filters to see a smaller subset.`;
+    } else {
+      summary.textContent = `${filtered.length} permit(s) shown.`;
+    }
   }
 }
 
