@@ -868,393 +868,532 @@ function renderCityScorecards() {
     container.appendChild(card);
   });
 }
+// =========================================
+// LOT-LEVEL FEASIBILITY CHECKER
+// =========================================
 
-// =========================================
-// LOT-LEVEL FEASIBILITY (HIGH-LEVEL CHECK)
-// =========================================
 function runFeasibilityCheck() {
   if (!state.initialized.zoningLoaded) return;
 
   const city = (document.getElementById("feasCity")?.value || "").trim();
   const zone = (document.getElementById("feasZone")?.value || "").trim();
 
-  // --- Read numeric inputs ---
+  // Inputs
+  const lotSizeStr = (document.getElementById("feasLotSize")?.value || "").trim();
+  const lotWidthStr = (document.getElementById("feasLotWidth")?.value || "").trim();
+  const lotDepthStr = (document.getElementById("feasLotDepth")?.value || "").trim();
+  const houseWidthStr = (document.getElementById("feasHouseWidth")?.value || "").trim();
+  const houseDepthStr = (document.getElementById("feasHouseDepth")?.value || "").trim();
+  const aduSizeStr = (document.getElementById("feasADUSize")?.value || "").trim();
 
-  const lotSizeInput =
-    (document.getElementById("feasLotSize")?.value || "").trim();
-  let lotSize = parseFloat(lotSizeInput.replace(/[^0-9.\-]/g, ""));
+  const hasTransit = !!document.getElementById("feasTransit")?.checked;
+  const hasAlley = !!document.getElementById("feasAlley")?.checked;
 
-  const lotWidthStr =
-    (document.getElementById("feasLotWidth")?.value || "").trim();
-  const lotDepthStr =
-    (document.getElementById("feasLotDepth")?.value || "").trim();
-  let lotWidth = parseFloat(lotWidthStr.replace(/[^0-9.\-]/g, ""));
-  let lotDepth = parseFloat(lotDepthStr.replace(/[^0-9.\-]/g, ""));
+  // Parse numeric values (strip junk just in case)
+  const parseNum = (str) => {
+    if (!str) return NaN;
+    const cleaned = str.replace(/[^0-9.\-]/g, "");
+    return cleaned ? parseFloat(cleaned) : NaN;
+  };
 
-  const houseWidthStr =
-    (document.getElementById("feasHouseWidth")?.value || "").trim();
-  const houseDepthStr =
-    (document.getElementById("feasHouseDepth")?.value || "").trim();
-  let houseWidth = parseFloat(houseWidthStr.replace(/[^0-9.\-]/g, ""));
-  let houseDepth = parseFloat(houseDepthStr.replace(/[^0-9.\-]/g, ""));
+  let lotSize = parseNum(lotSizeStr);
+  const lotWidth = parseNum(lotWidthStr);
+  const lotDepth = parseNum(lotDepthStr);
+  const houseWidth = parseNum(houseWidthStr);
+  const houseDepth = parseNum(houseDepthStr);
+  const aduSize = parseNum(aduSizeStr);
 
-  // If lot size is missing, fall back to lot width × depth, then house width × depth.
-  if (isNaN(lotSize) && !isNaN(lotWidth) && !isNaN(lotDepth)) {
+  // If lot size is missing but we have width × depth, approximate
+  if ((isNaN(lotSize) || !lotSize) && !isNaN(lotWidth) && !isNaN(lotDepth)) {
     lotSize = lotWidth * lotDepth;
   }
-  if (isNaN(lotSize) && !isNaN(houseWidth) && !isNaN(houseDepth)) {
-    lotSize = houseWidth * houseDepth;
-  }
-
-  const aduSizeStr =
-    (document.getElementById("feasADUSize")?.value || "").trim();
-  const aduSize = parseFloat(aduSizeStr.replace(/[^0-9.\-]/g, ""));
 
   const summaryEl = document.getElementById("feasibilitySummary");
   const detailsEl = document.getElementById("feasibilityDetails");
-  const diagramRoot = document.getElementById("feasDiagram");
+  const diagramEl = document.getElementById("feasDiagram");
 
-  const setMessage = (text, status = "unknown") => {
-    if (summaryEl) {
-      summaryEl.textContent = text;
-      if (status) {
-        summaryEl.dataset.status = status;
-      } else {
-        summaryEl.removeAttribute("data-status");
-      }
-    }
-    if (detailsEl) {
-      detailsEl.innerHTML = "";
-    }
-  };
+  if (detailsEl) detailsEl.innerHTML = "";
+  if (diagramEl) diagramEl.dataset.status = "";
 
+  // Basic input validation
   if (!city || isNaN(lotSize) || isNaN(aduSize)) {
-    setMessage(
-      "Enter a city, zone (optional), approximate lot size (or width × depth), and ADU size to run a quick feasibility screen.",
-      "missing-input"
-    );
+    if (summaryEl) {
+      summaryEl.innerHTML =
+        `<p class="feasibility-headline" data-status="incomplete">
+          Pick a city, (optionally) a zone, and enter lot size and target ADU size to see a feasibility check.
+        </p>`;
+    }
     return;
   }
 
-  let rows = state.zoning.byCity.get(city) || [];
+  // Get candidate zoning rows
+  let rowsForCity = state.zoning.byCity.get(city) || [];
+  if (!rowsForCity.length) {
+    if (summaryEl) {
+      summaryEl.innerHTML =
+        `<p class="feasibility-headline" data-status="unknown">
+          No zoning rows found for ${city} in the current dataset.
+        </p>`;
+    }
+    return;
+  }
 
-  // Filter by zone when chosen
   if (zone) {
     const zoneIdx = headerIndex("zone");
     if (zoneIdx !== -1) {
-      rows = rows.filter(
-        (row) => (row[zoneIdx] || "").toString().trim() === zone
+      rowsForCity = rowsForCity.filter(
+        (row) => (row[zoneIdx] || "").trim() === zone
       );
     }
   }
 
-  if (!rows.length) {
-    setMessage(
-      "No zoning rows found for this city/zone combination in the current dataset.",
-      "no-data"
-    );
+  if (!rowsForCity.length) {
+    if (summaryEl) {
+      summaryEl.innerHTML =
+        `<p class="feasibility-headline" data-status="unknown">
+          No zoning rows matched the selected city + zone combination.
+        </p>`;
+    }
     return;
   }
 
-  // Pick a "least restrictive" row as the working snapshot.
-  let bestRow = rows[0];
+  // Choose the "best" (least restrictive) row as a working proxy
+  let bestRow = rowsForCity[0];
   let bestScore = -Infinity;
 
-  rows.forEach((row) => {
+  rowsForCity.forEach((row) => {
     const minLot = getNumeric(row, "minLotSize");
     const maxSize = getNumeric(row, "maxADUSize");
-    const adu = getCell(row, "aduAllowed").toLowerCase();
-    const dadu = getCell(row, "daduAllowed").toLowerCase();
+    const aduAllowed = getCell(row, "aduAllowed").toLowerCase();
+    const daduAllowed = getCell(row, "daduAllowed").toLowerCase();
 
-    let s = 0;
-    if (!isNaN(minLot) && lotSize >= minLot) s += 2;
-    if (!isNaN(maxSize) && aduSize <= maxSize) s += 2;
-    if (adu.includes("yes")) s += 1;
-    if (dadu.includes("yes")) s += 0.5;
+    let score = 0;
+    if (!isNaN(minLot) && lotSize >= minLot) score += 2;
+    if (!isNaN(maxSize) && aduSize <= maxSize) score += 2;
+    if (aduAllowed.includes("yes")) score += 1;
+    if (daduAllowed.includes("yes")) score += 0.5;
 
-    if (s > bestScore) {
-      bestScore = s;
+    if (score > bestScore) {
+      bestScore = score;
       bestRow = row;
     }
   });
 
+  // Pull out key metrics
   const minLot = getNumeric(bestRow, "minLotSize");
   const maxSize = getNumeric(bestRow, "maxADUSize");
-  const adu = getCell(bestRow, "aduAllowed");
-  const dadu = getCell(bestRow, "daduAllowed");
+  const maxSizePct = getCell(bestRow, "maxADUSizePct");
+  const maxFAR = getNumeric(bestRow, "maxFAR");
+  const maxCoverage = getNumeric(bestRow, "maxLotCoverage"); // often a %
+  const aduAllowed = getCell(bestRow, "aduAllowed");
+  const daduAllowed = getCell(bestRow, "daduAllowed");
   const owner = getCell(bestRow, "ownerOcc");
 
-  // Extra numeric standards for the diagram
-  const coveragePct = getNumeric(bestRow, "maxLotCoverage");
-  const maxFAR = getNumeric(bestRow, "maxFAR");
-  const frontSetback = getNumeric(bestRow, "principalFront");
-  const streetSideSetback = getNumeric(bestRow, "principalStreetSide");
-  const daduRear = getNumeric(bestRow, "daduRear");
-  const daduSide = getNumeric(bestRow, "daduSideLotLine");
+  const rearSetback = getCell(bestRow, "daduRear");
+  const sideSetback = getCell(bestRow, "daduSideLotLine");
+  const streetSetback = getCell(bestRow, "daduStreetSide");
+  const fromPrimary = getCell(bestRow, "daduFromPrincipal");
 
-  const zoneName = getCell(bestRow, "zone");
-  const zoneType = getCell(bestRow, "zoneType");
+  const parkingReq = getCell(bestRow, "aduParkingRequired");
+  const parkingTransit = getCell(bestRow, "aduParkingTransitExempt");
 
-  let message = "";
-  let status = "unknown";
+  const greenscape = getCell(bestRow, "greenscapeNotes");
+  const impactFees = getCell(bestRow, "impactFees");
+  const lastReviewed = getCell(bestRow, "lastReviewed");
 
+  // Basic feasibility status
   const lotOK = !isNaN(minLot) ? lotSize >= minLot : true;
   const sizeOK = !isNaN(maxSize) ? aduSize <= maxSize : true;
-  const aduYes = adu.toLowerCase().includes("yes");
+  const aduYes = aduAllowed.toLowerCase().includes("yes");
+
+  let status = "unknown";
+  let headline = "";
 
   if (!aduYes) {
     status = "no";
-    message = `ADUs are not clearly allowed in the most favorable zone row for ${city} in this dataset. Further code review is required.`;
+    headline = `ADUs are not clearly allowed in the selected zone row for ${city}. Further code review is required.`;
   } else if (lotOK && sizeOK) {
     status = "yes";
-    message = `This lot and ADU size appear generally feasible in at least one zone row for ${city}, assuming other standards (setbacks, parking, design) can be met.`;
+    headline = `This lot and ADU size appear generally feasible in the selected zoning row, assuming setbacks, parking, and design standards can be met.`;
   } else if (!lotOK && sizeOK) {
     status = "maybe";
-    message = `ADU size is within typical limits, but the lot size is below at least one minimum recorded in this dataset. Variances, overlays, or updated code may still allow it.`;
+    headline = `ADU size is within typical limits, but the lot size is below a recorded minimum for this zone. Variances, overlays, or updated code may still allow it.`;
   } else if (lotOK && !sizeOK) {
     status = "maybe";
-    message = `Lot size meets a typical minimum, but the ADU size exceeds at least one maximum recorded in this dataset. A smaller ADU may be more feasible.`;
+    headline = `Lot size meets a typical minimum, but the ADU size exceeds a recorded maximum for this zone. A smaller ADU may be more feasible.`;
   } else {
     status = "no";
-    message = `Both lot size and ADU size fall outside at least one key standard in this dataset. A more detailed code review is needed.`;
+    headline = `Both lot size and ADU size fall outside at least one key standard in this zone. A more detailed code review is needed.`;
   }
 
+  // Parking nuance (transit + alley)
+  if (hasTransit && parkingTransit) {
+    headline += ` Transit-based parking relief is flagged in this zone: ${parkingTransit}.`;
+  }
+  if (hasAlley) {
+    headline += ` Alley access is assumed, which typically helps with rear-yard siting and parking access.`;
+  }
   if (owner) {
-    message += ` Owner-occupancy in this zone is recorded as: ${owner}.`;
+    headline += ` Owner-occupancy is recorded as: ${owner}.`;
   }
 
   if (summaryEl) {
-    summaryEl.textContent = message;
-    summaryEl.dataset.status = status;
+    summaryEl.innerHTML =
+      `<p class="feasibility-headline" data-status="${status}">${headline}</p>`;
+  }
+  if (diagramEl) {
+    diagramEl.dataset.status = status;
   }
 
-  // ----- Visual / diagram side -----
-  if (diagramRoot) {
-    diagramRoot.dataset.status = status;
-  }
+  // Ensure the diagram shell exists, then update geometry + labels
+  buildFeasDiagramShell();
+  renderFeasibilityDiagram(bestRow, {
+    lotSize,
+    lotWidth,
+    lotDepth,
+    houseWidth,
+    houseDepth,
+    aduSize,
+    hasTransit,
+    hasAlley,
+  });
 
-  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+  // Detailed report-style breakdown
+  renderFeasibilityDetails(bestRow, {
+    city,
+    zone,
+    lotSize,
+    lotWidth,
+    lotDepth,
+    houseWidth,
+    houseDepth,
+    aduSize,
+    hasTransit,
+    hasAlley,
+    status,
+  });
+}
 
-  // Ensure we have some width/depth to work with
-  let widthFt =
-    !isNaN(lotWidth) && lotWidth > 0
-      ? lotWidth
-      : lotSize > 0
-      ? Math.sqrt(lotSize)
-      : 50;
-  let depthFt =
-    !isNaN(lotDepth) && lotDepth > 0
-      ? lotDepth
-      : lotSize > 0
-      ? Math.sqrt(lotSize)
-      : 100;
+// Build the lot / buildable / primary / ADU boxes if they aren't already present
+function buildFeasDiagramShell() {
+  const container = document.getElementById("feasDiagram");
+  if (!container || container.dataset.initialized === "1") return;
 
-  // Treat rear/side DADU setbacks as proxy where principal rear/side are missing
-  const frontFt = Number.isFinite(frontSetback) ? frontSetback : 0;
-  const rearFt = Number.isFinite(daduRear) ? daduRear : frontFt;
-  const sideFt = Number.isFinite(daduSide)
-    ? daduSide
-    : Number.isFinite(streetSideSetback)
-    ? streetSideSetback
-    : frontFt / 2;
+  container.dataset.initialized = "1";
+  container.innerHTML = `
+    <div class="lot-box" id="lotBox">
+      <div class="lot-label">Lot</div>
+      <div class="buildable-box" id="buildableRect"></div>
+      <div class="buildable-label" id="buildableLabel">Buildable area</div>
+      <div class="primary-box" id="primaryRect">
+        <span class="primary-label">Primary home</span>
+      </div>
+      <div class="adu-box" id="aduRect">
+        <span class="adu-label" id="aduLabel">ADU</span>
+      </div>
+    </div>
+  `;
+}
 
-  const frontPct = clamp(frontFt / depthFt, 0, 0.35);
-  const rearPct = clamp(rearFt / depthFt, 0, 0.35);
-  const sidePct = clamp(sideFt / widthFt, 0, 0.35);
-  const otherSidePct = sidePct;
-
-  const innerLeft = sidePct * 100;
-  const innerRight = otherSidePct * 100;
-  const innerTop = frontPct * 100;
-  const innerBottom = rearPct * 100;
-
-  const innerWidthPct = clamp(100 - innerLeft - innerRight, 10, 96);
-  const innerHeightPct = clamp(100 - innerTop - innerBottom, 10, 96);
-
-  // Existing home footprint + coverage / FAR estimates
-  let footprint = NaN;
-  if (!isNaN(houseWidth) && !isNaN(houseDepth)) {
-    footprint = houseWidth * houseDepth;
-  }
-
-  const coverageCap =
-    !isNaN(coveragePct) && !isNaN(lotSize) && lotSize > 0
-      ? (coveragePct / 100) * lotSize
-      : NaN;
-
-  if (!isNaN(coverageCap)) {
-    if (isNaN(footprint)) {
-      footprint = coverageCap * 0.45; // assume typical home uses ~45% of allowed coverage
-    } else {
-      footprint = Math.min(footprint, coverageCap);
-    }
-  }
-
-  const primaryRatio =
-    !isNaN(footprint) && !isNaN(lotSize) && lotSize > 0
-      ? clamp(Math.sqrt(footprint / lotSize), 0.15, 0.7)
-      : 0.3;
-
-  const primaryWidthPct = innerWidthPct * primaryRatio;
-  const primaryHeightPct = innerHeightPct * primaryRatio;
-
-  const aduRatio =
-    !isNaN(aduSize) && !isNaN(lotSize) && lotSize > 0
-      ? clamp(Math.sqrt(aduSize / lotSize), 0.08, 0.4)
-      : 0.2;
-
-  const aduWidthPct = innerWidthPct * aduRatio;
-  const aduHeightPct = innerHeightPct * aduRatio;
-
+// Use zoning metrics + user inputs to position boxes and update labels
+function renderFeasibilityDiagram(zoneRow, inputs) {
+  const lotBox = document.getElementById("lotBox");
   const buildableRect = document.getElementById("buildableRect");
-  const aduRect = document.getElementById("aduRect");
   const primaryRect = document.getElementById("primaryRect");
-  const lotLabel = document.getElementById("lotLabel");
+  const aduRect = document.getElementById("aduRect");
   const buildableLabel = document.getElementById("buildableLabel");
-  const primaryLabel = document.getElementById("primaryLabel");
   const aduLabel = document.getElementById("aduLabel");
 
-  // Position the buildable envelope inside the lot, using the setbacks
-  if (buildableRect) {
-    buildableRect.style.transform = "none";
-    buildableRect.style.left = `${innerLeft}%`;
-    buildableRect.style.top = `${innerTop}%`;
-    buildableRect.style.width = `${innerWidthPct}%`;
-    buildableRect.style.height = `${innerHeightPct}%`;
+  if (!lotBox || !buildableRect || !primaryRect || !aduRect) return;
+
+  const {
+    lotSize,
+    lotWidth,
+    lotDepth,
+    houseWidth,
+    houseDepth,
+    aduSize,
+    hasAlley,
+  } = inputs;
+
+  // Normalize lot dimensions (we only need proportions)
+  let w = !isNaN(lotWidth) && lotWidth > 0 ? lotWidth : Math.sqrt(lotSize || 1);
+  let d = !isNaN(lotDepth) && lotDepth > 0 ? lotDepth : Math.sqrt(lotSize || 1);
+
+  if (!w || !d) {
+    w = 100;
+    d = 100;
   }
 
-  // Primary structure near the rear / interior of the buildable area
-  if (primaryRect) {
-    primaryRect.style.transform = "none";
-    primaryRect.style.width = `${primaryWidthPct}%`;
-    primaryRect.style.height = `${primaryHeightPct}%`;
-    primaryRect.style.left = `${
-      innerLeft + (innerWidthPct - primaryWidthPct) / 2
-    }%`;
-    primaryRect.style.top = `${innerTop + innerHeightPct - primaryHeightPct}%`;
+  // Pull setbacks
+  const rearStr = getCell(zoneRow, "daduRear");
+  const sideStr = getCell(zoneRow, "daduSideLotLine");
+  const fromPrimaryStr = getCell(zoneRow, "daduFromPrincipal");
+
+  const numFromText = (txt) => {
+    if (!txt) return NaN;
+    const match = txt.match(/([0-9.]+)/);
+    return match ? parseFloat(match[1]) : NaN;
+  };
+
+  let rearFt = numFromText(rearStr);
+  let sideFt = numFromText(sideStr);
+  const fromPrimaryFt = numFromText(fromPrimaryStr);
+
+  if (isNaN(rearFt)) rearFt = 10;
+  if (isNaN(sideFt)) sideFt = 5;
+
+  // Alley assumption: relax rear setback a bit visually
+  if (hasAlley) {
+    rearFt = Math.max(rearFt * 0.7, 5);
   }
 
-  // ADU towards the rear corner of the lot
-  if (aduRect) {
-    aduRect.style.transform = "none";
-    const minAduWidth = 8;
-    const minAduHeight = 6;
-    const aduWidthClamped = Math.max(minAduWidth, aduWidthPct);
-    const aduHeightClamped = Math.max(minAduHeight, aduHeightPct);
+  const frontFt = fromPrimaryFt && !isNaN(fromPrimaryFt) ? fromPrimaryFt : rearFt;
 
-    aduRect.style.width = `${aduWidthClamped}%`;
-    aduRect.style.height = `${aduHeightClamped}%`;
-    aduRect.style.left = `${
-      innerLeft + innerWidthPct - aduWidthClamped - 2
-    }%`;
-    aduRect.style.top = `${innerTop + 2}%`;
+  // Convert to percentages of lot dimensions
+  const sidePct = Math.max(0, Math.min(40, (sideFt / w) * 100));
+  const frontPct = Math.max(0, Math.min(40, (frontFt / d) * 100));
+  const rearPct = Math.max(0, Math.min(40, (rearFt / d) * 100));
+
+  const buildableWidthPct = Math.max(20, 100 - sidePct * 2);
+  const buildableHeightPct = Math.max(20, 100 - frontPct - rearPct);
+
+  // Position buildable box
+  buildableRect.style.position = "absolute";
+  buildableRect.style.left = `${sidePct}%`;
+  buildableRect.style.right = `${sidePct}%`;
+  buildableRect.style.top = `${frontPct}%`;
+  buildableRect.style.bottom = `${rearPct}%`;
+
+  // Primary home: use inputs if present, otherwise a mid-sized box at the front
+  let primaryWidthPct = 35;
+  let primaryHeightPct = 30;
+
+  if (!isNaN(houseWidth) && houseWidth > 0) {
+    primaryWidthPct = Math.max(
+      15,
+      Math.min(60, (houseWidth / w) * buildableWidthPct)
+    );
   }
+  if (!isNaN(houseDepth) && houseDepth > 0) {
+    primaryHeightPct = Math.max(
+      15,
+      Math.min(50, (houseDepth / d) * buildableHeightPct)
+    );
+  }
+
+  primaryRect.style.position = "absolute";
+  primaryRect.style.left = `${sidePct + 5}%`;
+  primaryRect.style.top = `${frontPct + 5}%`;
+  primaryRect.style.width = `${primaryWidthPct}%`;
+  primaryRect.style.height = `${primaryHeightPct}%`;
+
+  // ADU footprint: approximate from target size and lot size
+  let aduWidthPct = 22;
+  let aduHeightPct = 22;
+
+  if (!isNaN(aduSize) && aduSize > 0 && !isNaN(lotSize) && lotSize > 0) {
+    const footprintRatio = Math.min(aduSize / lotSize, 0.35); // ADU footprint vs lot
+    const side = Math.sqrt(footprintRatio); // side length as share of lot
+    aduWidthPct = Math.max(10, Math.min(30, side * buildableWidthPct * 1.2));
+    aduHeightPct = Math.max(10, Math.min(30, side * buildableHeightPct * 1.2));
+  }
+
+  aduRect.style.position = "absolute";
+
+  if (hasAlley) {
+    // Pull ADU to the rear of the lot when alley access is checked
+    aduRect.style.left = `${sidePct + buildableWidthPct * 0.55}%`;
+    aduRect.style.top = `${frontPct + buildableHeightPct * 0.55}%`;
+  } else {
+    // Default: place ADU behind/on opposite side of primary home
+    aduRect.style.left = `${sidePct + buildableWidthPct * 0.55}%`;
+    aduRect.style.top = `${frontPct + buildableHeightPct * 0.35}%`;
+  }
+  aduRect.style.width = `${aduWidthPct}%`;
+  aduRect.style.height = `${aduHeightPct}%`;
 
   // Labels
-  if (lotLabel) {
-    lotLabel.textContent = `Lot • ${
-      isNaN(lotSize) ? "?" : `${Math.round(lotSize).toLocaleString()} sf`
-    }`;
-  }
+  const fmtInt = (n) =>
+    isNaN(n) || n <= 0 ? "—" : Math.round(n).toLocaleString();
 
   if (buildableLabel) {
-    const covText = !isNaN(coveragePct)
-      ? `${coveragePct}% max coverage`
-      : "Coverage not in dataset";
-    const farText = !isNaN(maxFAR) ? `Max FAR ${maxFAR}` : "FAR not in dataset";
-    buildableLabel.textContent = `Buildable area • ${covText} • ${farText}`;
-  }
-
-  if (primaryLabel) {
-    const fpText =
-      !isNaN(footprint) && footprint > 0
-        ? `${Math.round(footprint).toLocaleString()} sf est.`
-        : "footprint est. unavailable";
-    primaryLabel.textContent = `Primary • ${fpText}`;
+    let coverageText = "";
+    const maxCoverage = getNumeric(zoneRow, "maxLotCoverage");
+    if (!isNaN(lotSize) && !isNaN(maxCoverage) && maxCoverage > 0) {
+      const coverageFrac =
+        maxCoverage > 1 ? maxCoverage / 100 : maxCoverage; // handle "0.6" vs "60"
+      const maxFootprint = lotSize * coverageFrac;
+      coverageText = ` · Max footprint (coverage): ${fmtInt(maxFootprint)} sf`;
+    }
+    buildableLabel.textContent = `Buildable area (approx) – Lot: ${fmtInt(
+      lotSize
+    )} sf${coverageText}`;
   }
 
   if (aduLabel) {
-    aduLabel.textContent = `ADU • ${
-      isNaN(aduSize) ? "?" : `${Math.round(aduSize).toLocaleString()} sf`
-    }`;
-  }
-
-  // ----- Detail panel text to match the diagram -----
-  if (detailsEl) {
-    const coverageUsedPct =
-      !isNaN(footprint) && lotSize > 0 ? (footprint / lotSize) * 100 : NaN;
-    const farUsed =
-      !isNaN(aduSize) && !isNaN(footprint) && lotSize > 0
-        ? (aduSize + footprint) / lotSize
-        : NaN;
-
-    const formatSf = (val) =>
-      isNaN(val) ? "—" : `${Math.round(val).toLocaleString()} sf`;
-
-    const formatPct = (val) =>
-      isNaN(val) ? "—" : `${val.toFixed(1)}%`;
-
-    const statusSummary =
-      status === "yes"
-        ? "Generally feasible based on size and ADU allowances."
-        : status === "maybe"
-        ? "Potentially feasible with one or more size constraints flagged."
-        : status === "no"
-        ? "Challenging under the snapshot row used here; a deeper code review is recommended."
-        : "Status unknown from this quick screen.";
-
-    const setbacksList = [
-      Number.isFinite(frontSetback)
-        ? `<li>Front: ${frontSetback} ft</li>`
-        : "",
-      Number.isFinite(streetSideSetback)
-        ? `<li>Street side: ${streetSideSetback} ft</li>`
-        : "",
-      Number.isFinite(daduSide) ? `<li>DADU side: ${daduSide} ft</li>` : "",
-      Number.isFinite(daduRear) ? `<li>DADU rear: ${daduRear} ft</li>` : "",
-    ]
-      .filter(Boolean)
-      .join("");
-
-    detailsEl.innerHTML = `
-      <h3>Zone snapshot: ${zoneName || "Unknown zone"}${
-      zoneType ? ` – ${zoneType}` : ""
-    }</h3>
-      <ul>
-        <li><strong>Min lot size:</strong> ${
-          isNaN(minLot) ? "Not recorded" : `${minLot.toLocaleString()} sf`
-        }</li>
-        <li><strong>Lot size entered:</strong> ${formatSf(lotSize)}</li>
-        <li><strong>Max ADU size:</strong> ${
-          isNaN(maxSize) ? "Not recorded" : `${maxSize.toLocaleString()} sf`
-        }</li>
-        <li><strong>Max lot coverage:</strong> ${
-          isNaN(coveragePct) ? "Not recorded" : `${coveragePct}%`
-        }</li>
-        <li><strong>Estimated primary footprint:</strong> ${formatSf(
-          footprint
-        )}${
-      !isNaN(coverageUsedPct)
-        ? ` (${formatPct(coverageUsedPct)} of lot)`
-        : ""
-    }</li>
-        <li><strong>Max FAR:</strong> ${
-          isNaN(maxFAR) ? "Not recorded" : maxFAR
-        }</li>
-        <li><strong>Estimated FAR (primary + ADU):</strong> ${
-          isNaN(farUsed) ? "—" : farUsed.toFixed(2)
-        }</li>
-        ${
-          setbacksList
-            ? `<li><strong>Key setbacks (ft):</strong><ul>${setbacksList}</ul></li>`
-            : ""
-        }
-        <li><strong>High-level read:</strong> ${statusSummary}</li>
-      </ul>
-    `;
+    const maxSize = getNumeric(zoneRow, "maxADUSize");
+    let limitText = "";
+    if (!isNaN(maxSize) && maxSize > 0) {
+      limitText = ` / Max ADU: ${fmtInt(maxSize)} sf`;
+    }
+    aduLabel.textContent = `ADU: ${fmtInt(aduSize)} sf${limitText}`;
   }
 }
+
+// Professional-style detailed report
+function renderFeasibilityDetails(zoneRow, context) {
+  const detailsEl = document.getElementById("feasibilityDetails");
+  if (!detailsEl) return;
+
+  const {
+    city,
+    zone,
+    lotSize,
+    lotWidth,
+    lotDepth,
+    houseWidth,
+    houseDepth,
+    aduSize,
+    hasTransit,
+    hasAlley,
+    status,
+  } = context;
+
+  const fmt = (n, suffix = "") =>
+    isNaN(n) || n <= 0 ? "—" : `${Math.round(n).toLocaleString()}${suffix}`;
+
+  const get = (key) => getCell(zoneRow, key) || "—";
+
+  const zoneType = getCell(zoneRow, "zoneType") || "";
+  const minLot = getCell(zoneRow, "minLotSize");
+  const density = getCell(zoneRow, "density");
+  const far = getCell(zoneRow, "maxFAR");
+  const coverage = getCell(zoneRow, "maxLotCoverage");
+  const aduAllowed = getCell(zoneRow, "aduAllowed");
+  const daduAllowed = getCell(zoneRow, "daduAllowed");
+  const owner = getCell(zoneRow, "ownerOcc");
+  const maxSize = getCell(zoneRow, "maxADUSize");
+  const maxPct = getCell(zoneRow, "maxADUSizePct");
+  const maxADUHeight = getCell(zoneRow, "maxADUHeight");
+  const maxDADUHeight = getCell(zoneRow, "maxDADUHeight");
+  const rear = getCell(zoneRow, "daduRear");
+  const side = getCell(zoneRow, "daduSideLotLine");
+  const street = getCell(zoneRow, "daduStreetSide");
+  const fromPrimary = getCell(zoneRow, "daduFromPrincipal");
+  const parkingReq = getCell(zoneRow, "aduParkingRequired");
+  const parkingTransit = getCell(zoneRow, "aduParkingTransitExempt");
+  const greenscape = getCell(zoneRow, "greenscapeNotes");
+  const impactFees = getCell(zoneRow, "impactFees");
+  const lastReviewed = getCell(zoneRow, "lastReviewed");
+
+  const statusLabel =
+    status === "yes"
+      ? "Generally feasible"
+      : status === "maybe"
+      ? "Potentially feasible with constraints"
+      : status === "no"
+      ? "Not clearly feasible in this row"
+      : "Needs review";
+
+  const heading = `${city || ""}${zone ? ` – ${zone}` : ""}${
+    zoneType ? ` (${zoneType})` : ""
+  }`;
+
+  detailsEl.innerHTML = `
+    <h3>Feasibility report: ${heading}</h3>
+    <p class="feasibility-status-tag">Status: ${statusLabel}</p>
+    <dl class="feasibility-report">
+      <div class="feasibility-metric">
+        <dt>Lot inputs</dt>
+        <dd>
+          Lot size: ${fmt(lotSize, " sf")} · Width: ${fmt(
+    lotWidth,
+    " ft"
+  )} · Depth: ${fmt(lotDepth, " ft")}
+          <br/>Existing home: ${fmt(houseWidth, " ft")} (width) × ${fmt(
+    houseDepth,
+    " ft"
+  )} (depth)
+        </dd>
+      </div>
+
+      <div class="feasibility-metric">
+        <dt>Target ADU</dt>
+        <dd>Target size: ${fmt(aduSize, " sf")} · Size limit (row): ${
+    maxSize || "—"
+  } · % of primary limit: ${maxPct || "—"}</dd>
+      </div>
+
+      <div class="feasibility-metric">
+        <dt>Intensity (from dataset)</dt>
+        <dd>
+          Min lot size: ${minLot || "—"} · Density: ${density || "—"}
+          <br/>Max FAR: ${far || "—"} · Max lot coverage: ${coverage || "—"}
+        </dd>
+      </div>
+
+      <div class="feasibility-metric">
+        <dt>ADU & DADU permissions</dt>
+        <dd>
+          ADU allowed: ${aduAllowed || "—"} · DADU allowed: ${
+    daduAllowed || "—"
+  }
+          <br/>Owner occupancy: ${owner || "—"}
+        </dd>
+      </div>
+
+      <div class="feasibility-metric">
+        <dt>Height limits</dt>
+        <dd>
+          Max ADU height: ${maxADUHeight || "—"} · Max DADU height: ${
+    maxDADUHeight || "—"
+  }
+        </dd>
+      </div>
+
+      <div class="feasibility-metric">
+        <dt>DADU setbacks</dt>
+        <dd>
+          Rear: ${rear || "—"} · Side: ${side || "—"} · Street: ${
+    street || "—"
+  } · From primary: ${fromPrimary || "—"}
+          <br/>Alley access: ${hasAlley ? "Yes (assumed in diagram)" : "No"}
+        </dd>
+      </div>
+
+      <div class="feasibility-metric">
+        <dt>Parking</dt>
+        <dd>
+          ADU parking requirement: ${parkingReq || "—"}
+          <br/>Transit-based relief: ${parkingTransit || "—"}
+          <br/>Transit radius flag in inputs: ${
+            hasTransit ? "Checked" : "Not checked"
+          }
+        </dd>
+      </div>
+
+      <div class="feasibility-metric">
+        <dt>Landscape, fees & notes</dt>
+        <dd>
+          Greenscape / open space notes: ${greenscape || "—"}
+          <br/>Impact fees: ${impactFees || "—"}
+          <br/>Last reviewed: ${lastReviewed || "—"}
+        </dd>
+      </div>
+    </dl>
+    <p class="feasibility-disclaimer">
+      This diagram and report are a simplified visual interpretation of the dataset you provided.
+      They are intended for screening only and do not replace a full zoning and building code review
+      or direct confirmation with planning staff.
+    </p>
+  `;
+}
+
+// Initialize city + zone selects and wire the Run button + diagram shell
 function initFeasibility() {
+  buildFeasDiagramShell();
+
   const runBtn = document.getElementById("runFeasibility");
   if (runBtn) {
     runBtn.addEventListener("click", (e) => {
@@ -1264,90 +1403,67 @@ function initFeasibility() {
   }
 
   const feasCity = document.getElementById("feasCity");
-  if (feasCity && state.zoning.byCity && state.zoning.byCity.size) {
-    const cities = Array.from(state.zoning.byCity.keys()).sort((a, b) =>
-      a.localeCompare(b, undefined, { sensitivity: "base" })
-    );
-    feasCity.innerHTML = "";
-    const opt0 = document.createElement("option");
-    opt0.value = "";
-    opt0.textContent = "Select a city";
-    feasCity.appendChild(opt0);
-    cities.forEach((c) => {
-      const opt = document.createElement("option");
-      opt.value = c;
-      opt.textContent = c;
-      feasCity.appendChild(opt);
-    });
+  const feasZone = document.getElementById("feasZone");
+
+  if (!feasCity || !state.zoning.byCity) return;
+
+  // Populate cities
+  const cities = Array.from(state.zoning.byCity.keys()).sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: "base" })
+  );
+
+  feasCity.innerHTML = "";
+  const opt0 = document.createElement("option");
+  opt0.value = "";
+  opt0.textContent = "Select a city";
+  feasCity.appendChild(opt0);
+
+  cities.forEach((c) => {
+    const opt = document.createElement("option");
+    opt.value = c;
+    opt.textContent = c;
+    feasCity.appendChild(opt);
+  });
+
+  // When city changes, populate zone list from that city's rows
+  if (feasZone) {
+    feasZone.innerHTML = "";
+    const z0 = document.createElement("option");
+    z0.value = "";
+    z0.textContent = "All zones in city";
+    feasZone.appendChild(z0);
 
     feasCity.addEventListener("change", () => {
-      updateFeasZoneOptions();
-      const summaryEl = document.getElementById("feasibilitySummary");
-      const detailsEl = document.getElementById("feasibilityDetails");
-      if (summaryEl) {
-        summaryEl.textContent = "";
-        summaryEl.removeAttribute("data-status");
-      }
-      if (detailsEl) {
-        detailsEl.innerHTML = "";
-      }
+      const selectedCity = (feasCity.value || "").trim();
+      feasZone.innerHTML = "";
+      const z0 = document.createElement("option");
+      z0.value = "";
+      z0.textContent = selectedCity ? "All zones in city" : "Select a city first";
+      feasZone.appendChild(z0);
+
+      if (!selectedCity) return;
+
+      const rows = state.zoning.byCity.get(selectedCity) || [];
+      const zoneIdx = headerIndex("zone");
+      if (zoneIdx === -1) return;
+
+      const zones = Array.from(
+        new Set(
+          rows
+            .map((row) => (row[zoneIdx] || "").trim())
+            .filter((z) => z && z !== "")
+        )
+      ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+
+      zones.forEach((z) => {
+        const opt = document.createElement("option");
+        opt.value = z;
+        opt.textContent = z;
+        feasZone.appendChild(opt);
+      });
     });
-
-    // Initial zone state
-    updateFeasZoneOptions();
-  }
-
-  // Build a reusable parcel diagram scaffold if it doesn't exist yet
-  const diagramRoot = document.getElementById("feasDiagram");
-  if (diagramRoot && !diagramRoot.hasChildNodes()) {
-    const lotBox = document.createElement("div");
-    lotBox.className = "lot-box";
-    lotBox.id = "lotBox";
-
-    const lotLabel = document.createElement("div");
-    lotLabel.className = "lot-label";
-    lotLabel.id = "lotLabel";
-    lotLabel.textContent = "Lot";
-    lotBox.appendChild(lotLabel);
-
-    const buildableBox = document.createElement("div");
-    buildableBox.className = "buildable-box";
-    buildableBox.id = "buildableRect";
-
-    const buildableLabel = document.createElement("div");
-    buildableLabel.className = "buildable-label";
-    buildableLabel.id = "buildableLabel";
-    buildableLabel.textContent = "Buildable area";
-    buildableBox.appendChild(buildableLabel);
-
-    const primaryBox = document.createElement("div");
-    primaryBox.className = "primary-box";
-    primaryBox.id = "primaryRect";
-
-    const primaryLabel = document.createElement("div");
-    primaryLabel.className = "primary-label";
-    primaryLabel.id = "primaryLabel";
-    primaryLabel.textContent = "Primary";
-    primaryBox.appendChild(primaryLabel);
-
-    const aduBox = document.createElement("div");
-    aduBox.className = "adu-box";
-    aduBox.id = "aduRect";
-
-    const aduLabel = document.createElement("div");
-    aduLabel.className = "adu-label";
-    aduLabel.id = "aduLabel";
-    aduLabel.textContent = "ADU";
-    aduBox.appendChild(aduLabel);
-
-    lotBox.appendChild(buildableBox);
-    lotBox.appendChild(primaryBox);
-    lotBox.appendChild(aduBox);
-
-    diagramRoot.appendChild(lotBox);
   }
 }
-
 
 // =========================================
 // PERMITS TABLE (BASIC VERSION)
