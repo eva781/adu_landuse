@@ -872,7 +872,6 @@ function renderCityScorecards() {
 // =========================================
 // LOT-LEVEL FEASIBILITY (HIGH-LEVEL CHECK)
 // =========================================
-
 function runFeasibilityCheck() {
   if (!state.initialized.zoningLoaded) return;
 
@@ -1031,7 +1030,11 @@ function runFeasibilityCheck() {
     if (dadu) pieces.push(`<strong>DADU allowed:</strong> ${dadu}`);
     if (owner) pieces.push(`<strong>Owner occupancy:</strong> ${owner}`);
     pieces.push(
-      `<strong>Your inputs:</strong> lot ${isNaN(lotSize) ? "?" : lotSize.toLocaleString()} sf; ADU ${isNaN(aduSize) ? "?" : aduSize.toLocaleString()} sf.`
+      `<strong>Your inputs:</strong> lot ${
+        isNaN(lotSize) ? "?" : lotSize.toLocaleString()
+      } sf; ADU ${
+        isNaN(aduSize) ? "?" : aduSize.toLocaleString()
+      } sf.`
     );
 
     detailsEl.innerHTML = `<ul>${pieces
@@ -1119,6 +1122,57 @@ function updateFeasZoneOptions() {
   zoneSelect.disabled = false;
 }
 
+function updateFeasZoneOptions() {
+  const citySelect = document.getElementById("feasCity");
+  const zoneSelect = document.getElementById("feasZone");
+  if (!zoneSelect) return;
+
+  const city = (citySelect?.value || "").trim();
+
+  zoneSelect.innerHTML = "";
+
+  if (!city) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Select a city first";
+    zoneSelect.appendChild(opt);
+    zoneSelect.disabled = true;
+    return;
+  }
+
+  const rows = state.zoning.byCity.get(city) || [];
+  const zoneIdx = headerIndex("zone");
+  const zones = new Set();
+
+  if (zoneIdx !== -1) {
+    rows.forEach((row) => {
+      const z = (row[zoneIdx] || "").trim();
+      if (z) zones.add(z);
+    });
+  }
+
+  const baseOption = document.createElement("option");
+  baseOption.value = "";
+  baseOption.textContent = zones.size
+    ? "Any zone in this city"
+    : "No zones found";
+  zoneSelect.appendChild(baseOption);
+
+  if (!zones.size) {
+    zoneSelect.disabled = true;
+    return;
+  }
+
+  zones.forEach((z) => {
+    const opt = document.createElement("option");
+    opt.value = z;
+    opt.textContent = z;
+    zoneSelect.appendChild(opt);
+  });
+
+  zoneSelect.disabled = false;
+}
+
 function initFeasibility() {
   const runBtn = document.getElementById("runFeasibility");
   if (runBtn) {
@@ -1129,17 +1183,15 @@ function initFeasibility() {
   }
 
   const feasCity = document.getElementById("feasCity");
-  if (feasCity && state.zoning.byCity.size) {
+  if (feasCity && state.zoning.byCity && state.zoning.byCity.size) {
     const cities = Array.from(state.zoning.byCity.keys()).sort((a, b) =>
       a.localeCompare(b, undefined, { sensitivity: "base" })
     );
-
     feasCity.innerHTML = "";
     const opt0 = document.createElement("option");
     opt0.value = "";
     opt0.textContent = "Select a city";
     feasCity.appendChild(opt0);
-
     cities.forEach((c) => {
       const opt = document.createElement("option");
       opt.value = c;
@@ -1162,11 +1214,21 @@ function initFeasibility() {
       }
     });
 
-    // Initial state: "Select a city first" in the zone dropdown
+    // Initial zone state
     updateFeasZoneOptions();
+  } else {
+    // If for some reason zoning isn't ready yet, leave the selects as-is.
+    const zoneSelect = document.getElementById("feasZone");
+    if (zoneSelect) {
+      zoneSelect.innerHTML = "";
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "Zones load once data is ready";
+      zoneSelect.appendChild(opt);
+      zoneSelect.disabled = true;
+    }
   }
 }
-
 
 // =========================================
 // PERMITS TABLE (BASIC VERSION)
