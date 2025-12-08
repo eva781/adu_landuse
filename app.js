@@ -872,11 +872,15 @@ function renderCityScorecards() {
 // =========================================
 // LOT-LEVEL FEASIBILITY (HIGH-LEVEL CHECK)
 // =========================================
+// =========================================
+// LOT-LEVEL FEASIBILITY (HIGH-LEVEL CHECK)
+// =========================================
 
 function runFeasibilityCheck() {
   if (!state.initialized.zoningLoaded) return;
 
   const city = (document.getElementById("feasCity")?.value || "").trim();
+  const zone = (document.getElementById("feasZone")?.value || "").trim();
 
   // Lot size can be entered directly or approximated from house width/depth.
   const lotSizeInput =
@@ -899,27 +903,51 @@ function runFeasibilityCheck() {
     (document.getElementById("feasADUSize")?.value || "").trim();
   const aduSize = parseFloat(aduSizeStr.replace(/[^0-9.\-]/g, ""));
 
-  const resultEl = document.getElementById("feasResult");
+  const summaryEl = document.getElementById("feasibilitySummary");
+  const detailsEl = document.getElementById("feasibilityDetails");
   const diagram = document.getElementById("feasDiagram");
 
+  const setMessage = (text, status = "unknown") => {
+    if (summaryEl) {
+      summaryEl.textContent = text;
+      if (status) {
+        summaryEl.dataset.status = status;
+      } else {
+        summaryEl.removeAttribute("data-status");
+      }
+    }
+    if (detailsEl) {
+      detailsEl.innerHTML = "";
+    }
+  };
+
   if (!city || isNaN(lotSize) || isNaN(aduSize)) {
-    if (resultEl) {
-      resultEl.textContent =
-        "Enter a city, approximate lot size (or house width × depth), and ADU size to run a quick feasibility screen.";
-    }
+    setMessage(
+      "Enter a city, zone (optional), approximate lot size (or house width × depth), and ADU size to run a quick feasibility screen.",
+      "unknown"
+    );
     return;
   }
 
-  const rows = state.zoning.byCity.get(city) || [];
+  let rows = state.zoning.byCity.get(city) || [];
+
+  // If a specific zone is chosen, filter to that zone
+  if (zone) {
+    const zoneIdx = headerIndex("zone");
+    if (zoneIdx !== -1) {
+      rows = rows.filter((row) => (row[zoneIdx] || "").trim() === zone);
+    }
+  }
+
   if (!rows.length) {
-    if (resultEl) {
-      resultEl.textContent =
-        "No zoning rows found for this city in the current dataset.";
-    }
+    setMessage(
+      "No zoning rows found for this city/zone combination in the current dataset.",
+      "unknown"
+    );
     return;
   }
 
-  // For now, take the "least restrictive" row for this city as a simple heuristic.
+  // Take the "least restrictive" row for this city/zone as a simple heuristic.
   let bestRow = rows[0];
   let bestScore = -Infinity;
 
@@ -946,6 +974,8 @@ function runFeasibilityCheck() {
   const adu = getCell(bestRow, "aduAllowed");
   const dadu = getCell(bestRow, "daduAllowed");
   const owner = getCell(bestRow, "ownerOcc");
+  const zoneName = getCell(bestRow, "zone");
+  const zoneType = getCell(bestRow, "zoneType");
 
   let message = "";
   let status = "unknown";
@@ -975,9 +1005,41 @@ function runFeasibilityCheck() {
     message += ` Owner-occupancy in this zone is recorded as: ${owner}.`;
   }
 
-  if (resultEl) {
-    resultEl.textContent = message;
-    resultEl.dataset.status = status;
+  if (summaryEl) {
+    summaryEl.textContent = message;
+    summaryEl.dataset.status = status;
+  }
+
+  if (detailsEl) {
+    const pieces = [];
+
+    if (zoneName || zoneType) {
+      pieces.push(
+        `<strong>Row used:</strong> ${[zoneName, zoneType]
+          .filter(Boolean)
+          .join(" – ")}`
+      );
+    }
+    if (!isNaN(minLot)) {
+      pieces.push(
+        `<strong>Recorded minimum lot size:</strong> ${minLot.toLocaleString()} sf`
+      );
+    }
+    if (!isNaN(maxSize)) {
+      pieces.push(
+        `<strong>Recorded maximum ADU size:</strong> ${maxSize.toLocaleString()} sf`
+      );
+    }
+    if (adu) pieces.push(`<strong>ADU allowed:</strong> ${adu}`);
+    if (dadu) pieces.push(`<strong>DADU allowed:</strong> ${dadu}`);
+    if (owner) pieces.push(`<strong>Owner occupancy:</strong> ${owner}`);
+    pieces.push(
+      `<strong>Your inputs:</strong> lot ${isNaN(lotSize) ? "?" : lotSize.toLocaleString()} sf; ADU ${isNaN(aduSize) ? "?" : aduSize.toLocaleString()} sf.`
+    );
+
+    detailsEl.innerHTML = `<ul>${pieces
+      .map((p) => `<li>${p}</li>`)
+      .join("")}</ul>`;
   }
 
   // Diagram tweaks (non-fatal if missing)
@@ -999,10 +1061,14 @@ function runFeasibilityCheck() {
   }
 
   if (buildableLabel) {
-    buildableLabel.textContent = `Lot: ${isNaN(lotSize) ? "?" : lotSize} sf`;
+    buildableLabel.textContent = `Lot: ${
+      isNaN(lotSize) ? "?" : lotSize.toLocaleString()
+    } sf`;
   }
   if (aduLabel) {
-    aduLabel.textContent = `ADU: ${isNaN(aduSize) ? "?" : aduSize} sf`;
+    aduLabel.textContent = `ADU: ${
+      isNaN(aduSize) ? "?" : aduSize.toLocaleString()
+    } sf`;
   }
 }
 
