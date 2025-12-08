@@ -279,12 +279,26 @@ async function loadPermitsData() {
     const text = await res.text();
     const rows = parseCSV(text);
     if (!rows.length) return;
+state.permits.headers = rows[0];
 
-    state.permits.headers = rows[0];
-    state.permits.rows = rows.slice(1).filter((r) =>
-      r.some((cell) => cell && String(cell).trim() !== "")
-    );
-    state.permits.filteredRows = state.permits.rows.slice();
+// Filter out empty rows first
+let parsedRows = rows.slice(1).filter((r) =>
+  r.some((cell) => cell && String(cell).trim() !== "")
+);
+
+// --- FILTER TO ONLY 2024 + 2025 PERMITS ---
+const yearCol = state.permits.headers.indexOf("Year");  // adjust if your column is named differently
+
+if (yearCol !== -1) {
+  parsedRows = parsedRows.filter((row) => {
+    const year = parseInt((row[yearCol] || "").toString().trim(), 10);
+    return year === 2024 || year === 2025;
+  });
+}
+
+state.permits.rows = parsedRows;
+state.permits.filteredRows = parsedRows.slice();
+
     state.initialized.permitsLoaded = true;
   } catch (err) {
     console.warn("Error loading permits CSV:", err);
