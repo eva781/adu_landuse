@@ -878,21 +878,32 @@ function runFeasibilityCheck() {
   const city = (document.getElementById("feasCity")?.value || "").trim();
   const zone = (document.getElementById("feasZone")?.value || "").trim();
 
-  // Lot size can be entered directly or approximated from house width/depth.
+  // --- Read numeric inputs ---
+
   const lotSizeInput =
     (document.getElementById("feasLotSize")?.value || "").trim();
   let lotSize = parseFloat(lotSizeInput.replace(/[^0-9.\-]/g, ""));
 
-  if (isNaN(lotSize)) {
-    const wStr =
-      (document.getElementById("feasHouseWidth")?.value || "").trim();
-    const dStr =
-      (document.getElementById("feasHouseDepth")?.value || "").trim();
-    const w = parseFloat(wStr.replace(/[^0-9.\-]/g, ""));
-    const d = parseFloat(dStr.replace(/[^0-9.\-]/g, ""));
-    if (!isNaN(w) && !isNaN(d)) {
-      lotSize = w * d;
-    }
+  const lotWidthStr =
+    (document.getElementById("feasLotWidth")?.value || "").trim();
+  const lotDepthStr =
+    (document.getElementById("feasLotDepth")?.value || "").trim();
+  let lotWidth = parseFloat(lotWidthStr.replace(/[^0-9.\-]/g, ""));
+  let lotDepth = parseFloat(lotDepthStr.replace(/[^0-9.\-]/g, ""));
+
+  const houseWidthStr =
+    (document.getElementById("feasHouseWidth")?.value || "").trim();
+  const houseDepthStr =
+    (document.getElementById("feasHouseDepth")?.value || "").trim();
+  let houseWidth = parseFloat(houseWidthStr.replace(/[^0-9.\-]/g, ""));
+  let houseDepth = parseFloat(houseDepthStr.replace(/[^0-9.\-]/g, ""));
+
+  // If lot size is missing, fall back to lot width × depth, then house width × depth.
+  if (isNaN(lotSize) && !isNaN(lotWidth) && !isNaN(lotDepth)) {
+    lotSize = lotWidth * lotDepth;
+  }
+  if (isNaN(lotSize) && !isNaN(houseWidth) && !isNaN(houseDepth)) {
+    lotSize = houseWidth * houseDepth;
   }
 
   const aduSizeStr =
@@ -901,7 +912,7 @@ function runFeasibilityCheck() {
 
   const summaryEl = document.getElementById("feasibilitySummary");
   const detailsEl = document.getElementById("feasibilityDetails");
-  const diagram = document.getElementById("feasDiagram");
+  const diagramRoot = document.getElementById("feasDiagram");
 
   const setMessage = (text, status = "unknown") => {
     if (summaryEl) {
@@ -919,31 +930,33 @@ function runFeasibilityCheck() {
 
   if (!city || isNaN(lotSize) || isNaN(aduSize)) {
     setMessage(
-      "Enter a city, zone (optional), approximate lot size (or house width × depth), and ADU size to run a quick feasibility screen.",
-      "unknown"
+      "Enter a city, zone (optional), approximate lot size (or width × depth), and ADU size to run a quick feasibility screen.",
+      "missing-input"
     );
     return;
   }
 
   let rows = state.zoning.byCity.get(city) || [];
 
-  // If a specific zone is chosen, filter to that zone
+  // Filter by zone when chosen
   if (zone) {
     const zoneIdx = headerIndex("zone");
     if (zoneIdx !== -1) {
-      rows = rows.filter((row) => (row[zoneIdx] || "").trim() === zone);
+      rows = rows.filter(
+        (row) => (row[zoneIdx] || "").toString().trim() === zone
+      );
     }
   }
 
   if (!rows.length) {
     setMessage(
       "No zoning rows found for this city/zone combination in the current dataset.",
-      "unknown"
+      "no-data"
     );
     return;
   }
 
-  // Take the "least restrictive" row for this city/zone as a simple heuristic.
+  // Pick a "least restrictive" row as the working snapshot.
   let bestRow = rows[0];
   let bestScore = -Infinity;
 
@@ -970,6 +983,15 @@ function runFeasibilityCheck() {
   const adu = getCell(bestRow, "aduAllowed");
   const dadu = getCell(bestRow, "daduAllowed");
   const owner = getCell(bestRow, "ownerOcc");
+
+  // Extra numeric standards for the diagram
+  const coveragePct = getNumeric(bestRow, "maxLotCoverage");
+  const maxFAR = getNumeric(bestRow, "maxFAR");
+  const frontSetback = getNumeric(bestRow, "principalFront");
+  const streetSideSetback = getNumeric(bestRow, "principalStreetSide");
+  const daduRear = getNumeric(bestRow, "daduRear");
+  const daduSide = getNumeric(bestRow, "daduSideLotLine");
+
   const zoneName = getCell(bestRow, "zone");
   const zoneType = getCell(bestRow, "zoneType");
 
@@ -1006,173 +1028,232 @@ function runFeasibilityCheck() {
     summaryEl.dataset.status = status;
   }
 
-  if (detailsEl) {
-    const pieces = [];
-
-    if (zoneName || zoneType) {
-      pieces.push(
-        `<strong>Row used:</strong> ${[zoneName, zoneType]
-          .filter(Boolean)
-          .join(" – ")}`
-      );
-    }
-    if (!isNaN(minLot)) {
-      pieces.push(
-        `<strong>Recorded minimum lot size:</strong> ${minLot.toLocaleString()} sf`
-      );
-    }
-    if (!isNaN(maxSize)) {
-      pieces.push(
-        `<strong>Recorded maximum ADU size:</strong> ${maxSize.toLocaleString()} sf`
-      );
-    }
-    if (adu) pieces.push(`<strong>ADU allowed:</strong> ${adu}`);
-    if (dadu) pieces.push(`<strong>DADU allowed:</strong> ${dadu}`);
-    if (owner) pieces.push(`<strong>Owner occupancy:</strong> ${owner}`);
-    pieces.push(
-      `<strong>Your inputs:</strong> lot ${
-        isNaN(lotSize) ? "?" : lotSize.toLocaleString()
-      } sf; ADU ${
-        isNaN(aduSize) ? "?" : aduSize.toLocaleString()
-      } sf.`
-    );
-
-    detailsEl.innerHTML = `<ul>${pieces
-      .map((p) => `<li>${p}</li>`)
-      .join("")}</ul>`;
+  // ----- Visual / diagram side -----
+  if (diagramRoot) {
+    diagramRoot.dataset.status = status;
   }
 
-  // Diagram tweaks (non-fatal if missing)
-  if (diagram) {
-    diagram.dataset.status = status;
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+
+  // Ensure we have some width/depth to work with
+  let widthFt =
+    !isNaN(lotWidth) && lotWidth > 0
+      ? lotWidth
+      : lotSize > 0
+      ? Math.sqrt(lotSize)
+      : 50;
+  let depthFt =
+    !isNaN(lotDepth) && lotDepth > 0
+      ? lotDepth
+      : lotSize > 0
+      ? Math.sqrt(lotSize)
+      : 100;
+
+  // Treat rear/side DADU setbacks as proxy where principal rear/side are missing
+  const frontFt = Number.isFinite(frontSetback) ? frontSetback : 0;
+  const rearFt = Number.isFinite(daduRear) ? daduRear : frontFt;
+  const sideFt = Number.isFinite(daduSide)
+    ? daduSide
+    : Number.isFinite(streetSideSetback)
+    ? streetSideSetback
+    : frontFt / 2;
+
+  const frontPct = clamp(frontFt / depthFt, 0, 0.35);
+  const rearPct = clamp(rearFt / depthFt, 0, 0.35);
+  const sidePct = clamp(sideFt / widthFt, 0, 0.35);
+  const otherSidePct = sidePct;
+
+  const innerLeft = sidePct * 100;
+  const innerRight = otherSidePct * 100;
+  const innerTop = frontPct * 100;
+  const innerBottom = rearPct * 100;
+
+  const innerWidthPct = clamp(100 - innerLeft - innerRight, 10, 96);
+  const innerHeightPct = clamp(100 - innerTop - innerBottom, 10, 96);
+
+  // Existing home footprint + coverage / FAR estimates
+  let footprint = NaN;
+  if (!isNaN(houseWidth) && !isNaN(houseDepth)) {
+    footprint = houseWidth * houseDepth;
   }
+
+  const coverageCap =
+    !isNaN(coveragePct) && !isNaN(lotSize) && lotSize > 0
+      ? (coveragePct / 100) * lotSize
+      : NaN;
+
+  if (!isNaN(coverageCap)) {
+    if (isNaN(footprint)) {
+      footprint = coverageCap * 0.45; // assume typical home uses ~45% of allowed coverage
+    } else {
+      footprint = Math.min(footprint, coverageCap);
+    }
+  }
+
+  const primaryRatio =
+    !isNaN(footprint) && !isNaN(lotSize) && lotSize > 0
+      ? clamp(Math.sqrt(footprint / lotSize), 0.15, 0.7)
+      : 0.3;
+
+  const primaryWidthPct = innerWidthPct * primaryRatio;
+  const primaryHeightPct = innerHeightPct * primaryRatio;
+
+  const aduRatio =
+    !isNaN(aduSize) && !isNaN(lotSize) && lotSize > 0
+      ? clamp(Math.sqrt(aduSize / lotSize), 0.08, 0.4)
+      : 0.2;
+
+  const aduWidthPct = innerWidthPct * aduRatio;
+  const aduHeightPct = innerHeightPct * aduRatio;
 
   const buildableRect = document.getElementById("buildableRect");
   const aduRect = document.getElementById("aduRect");
+  const primaryRect = document.getElementById("primaryRect");
+  const lotLabel = document.getElementById("lotLabel");
   const buildableLabel = document.getElementById("buildableLabel");
+  const primaryLabel = document.getElementById("primaryLabel");
   const aduLabel = document.getElementById("aduLabel");
 
-  if (buildableRect && aduRect) {
-    const lotScale = Math.max(Math.min(lotSize / 10000, 2), 0.3);
-    const aduScale = Math.max(Math.min(aduSize / 800, 2), 0.2);
+  // Position the buildable envelope inside the lot, using the setbacks
+  if (buildableRect) {
+    buildableRect.style.transform = "none";
+    buildableRect.style.left = `${innerLeft}%`;
+    buildableRect.style.top = `${innerTop}%`;
+    buildableRect.style.width = `${innerWidthPct}%`;
+    buildableRect.style.height = `${innerHeightPct}%`;
+  }
 
-    buildableRect.style.transform = `scale(${lotScale})`;
-    aduRect.style.transform = `scale(${aduScale})`;
+  // Primary structure near the rear / interior of the buildable area
+  if (primaryRect) {
+    primaryRect.style.transform = "none";
+    primaryRect.style.width = `${primaryWidthPct}%`;
+    primaryRect.style.height = `${primaryHeightPct}%`;
+    primaryRect.style.left = `${
+      innerLeft + (innerWidthPct - primaryWidthPct) / 2
+    }%`;
+    primaryRect.style.top = `${innerTop + innerHeightPct - primaryHeightPct}%`;
+  }
+
+  // ADU towards the rear corner of the lot
+  if (aduRect) {
+    aduRect.style.transform = "none";
+    const minAduWidth = 8;
+    const minAduHeight = 6;
+    const aduWidthClamped = Math.max(minAduWidth, aduWidthPct);
+    const aduHeightClamped = Math.max(minAduHeight, aduHeightPct);
+
+    aduRect.style.width = `${aduWidthClamped}%`;
+    aduRect.style.height = `${aduHeightClamped}%`;
+    aduRect.style.left = `${
+      innerLeft + innerWidthPct - aduWidthClamped - 2
+    }%`;
+    aduRect.style.top = `${innerTop + 2}%`;
+  }
+
+  // Labels
+  if (lotLabel) {
+    lotLabel.textContent = `Lot • ${
+      isNaN(lotSize) ? "?" : `${Math.round(lotSize).toLocaleString()} sf`
+    }`;
   }
 
   if (buildableLabel) {
-    buildableLabel.textContent = `Lot: ${
-      isNaN(lotSize) ? "?" : lotSize.toLocaleString()
-    } sf`;
+    const covText = !isNaN(coveragePct)
+      ? `${coveragePct}% max coverage`
+      : "Coverage not in dataset";
+    const farText = !isNaN(maxFAR) ? `Max FAR ${maxFAR}` : "FAR not in dataset";
+    buildableLabel.textContent = `Buildable area • ${covText} • ${farText}`;
   }
+
+  if (primaryLabel) {
+    const fpText =
+      !isNaN(footprint) && footprint > 0
+        ? `${Math.round(footprint).toLocaleString()} sf est.`
+        : "footprint est. unavailable";
+    primaryLabel.textContent = `Primary • ${fpText}`;
+  }
+
   if (aduLabel) {
-    aduLabel.textContent = `ADU: ${
-      isNaN(aduSize) ? "?" : aduSize.toLocaleString()
-    } sf`;
+    aduLabel.textContent = `ADU • ${
+      isNaN(aduSize) ? "?" : `${Math.round(aduSize).toLocaleString()} sf`
+    }`;
+  }
+
+  // ----- Detail panel text to match the diagram -----
+  if (detailsEl) {
+    const coverageUsedPct =
+      !isNaN(footprint) && lotSize > 0 ? (footprint / lotSize) * 100 : NaN;
+    const farUsed =
+      !isNaN(aduSize) && !isNaN(footprint) && lotSize > 0
+        ? (aduSize + footprint) / lotSize
+        : NaN;
+
+    const formatSf = (val) =>
+      isNaN(val) ? "—" : `${Math.round(val).toLocaleString()} sf`;
+
+    const formatPct = (val) =>
+      isNaN(val) ? "—" : `${val.toFixed(1)}%`;
+
+    const statusSummary =
+      status === "yes"
+        ? "Generally feasible based on size and ADU allowances."
+        : status === "maybe"
+        ? "Potentially feasible with one or more size constraints flagged."
+        : status === "no"
+        ? "Challenging under the snapshot row used here; a deeper code review is recommended."
+        : "Status unknown from this quick screen.";
+
+    const setbacksList = [
+      Number.isFinite(frontSetback)
+        ? `<li>Front: ${frontSetback} ft</li>`
+        : "",
+      Number.isFinite(streetSideSetback)
+        ? `<li>Street side: ${streetSideSetback} ft</li>`
+        : "",
+      Number.isFinite(daduSide) ? `<li>DADU side: ${daduSide} ft</li>` : "",
+      Number.isFinite(daduRear) ? `<li>DADU rear: ${daduRear} ft</li>` : "",
+    ]
+      .filter(Boolean)
+      .join("");
+
+    detailsEl.innerHTML = `
+      <h3>Zone snapshot: ${zoneName || "Unknown zone"}${
+      zoneType ? ` – ${zoneType}` : ""
+    }</h3>
+      <ul>
+        <li><strong>Min lot size:</strong> ${
+          isNaN(minLot) ? "Not recorded" : `${minLot.toLocaleString()} sf`
+        }</li>
+        <li><strong>Lot size entered:</strong> ${formatSf(lotSize)}</li>
+        <li><strong>Max ADU size:</strong> ${
+          isNaN(maxSize) ? "Not recorded" : `${maxSize.toLocaleString()} sf`
+        }</li>
+        <li><strong>Max lot coverage:</strong> ${
+          isNaN(coveragePct) ? "Not recorded" : `${coveragePct}%`
+        }</li>
+        <li><strong>Estimated primary footprint:</strong> ${formatSf(
+          footprint
+        )}${
+      !isNaN(coverageUsedPct)
+        ? ` (${formatPct(coverageUsedPct)} of lot)`
+        : ""
+    }</li>
+        <li><strong>Max FAR:</strong> ${
+          isNaN(maxFAR) ? "Not recorded" : maxFAR
+        }</li>
+        <li><strong>Estimated FAR (primary + ADU):</strong> ${
+          isNaN(farUsed) ? "—" : farUsed.toFixed(2)
+        }</li>
+        ${
+          setbacksList
+            ? `<li><strong>Key setbacks (ft):</strong><ul>${setbacksList}</ul></li>`
+            : ""
+        }
+        <li><strong>High-level read:</strong> ${statusSummary}</li>
+      </ul>
+    `;
   }
 }
-function updateFeasZoneOptions() {
-  const citySelect = document.getElementById("feasCity");
-  const zoneSelect = document.getElementById("feasZone");
-  if (!zoneSelect) return;
-
-  const city = (citySelect?.value || "").trim();
-
-  zoneSelect.innerHTML = "";
-
-  if (!city) {
-    const opt = document.createElement("option");
-    opt.value = "";
-    opt.textContent = "Select a city first";
-    zoneSelect.appendChild(opt);
-    zoneSelect.disabled = true;
-    return;
-  }
-
-  const rows = state.zoning.byCity.get(city) || [];
-  const zoneIdx = headerIndex("zone");
-  const zones = new Set();
-
-  if (zoneIdx !== -1) {
-    rows.forEach((row) => {
-      const z = (row[zoneIdx] || "").trim();
-      if (z) zones.add(z);
-    });
-  }
-
-  const baseOption = document.createElement("option");
-  baseOption.value = "";
-  baseOption.textContent = zones.size
-    ? "Any zone in this city"
-    : "No zones found";
-  zoneSelect.appendChild(baseOption);
-
-  if (!zones.size) {
-    zoneSelect.disabled = true;
-    return;
-  }
-
-  zones.forEach((z) => {
-    const opt = document.createElement("option");
-    opt.value = z;
-    opt.textContent = z;
-    zoneSelect.appendChild(opt);
-  });
-
-  zoneSelect.disabled = false;
-}
-
-function updateFeasZoneOptions() {
-  const citySelect = document.getElementById("feasCity");
-  const zoneSelect = document.getElementById("feasZone");
-  if (!zoneSelect) return;
-
-  const city = (citySelect?.value || "").trim();
-
-  zoneSelect.innerHTML = "";
-
-  if (!city) {
-    const opt = document.createElement("option");
-    opt.value = "";
-    opt.textContent = "Select a city first";
-    zoneSelect.appendChild(opt);
-    zoneSelect.disabled = true;
-    return;
-  }
-
-  const rows = state.zoning.byCity.get(city) || [];
-  const zoneIdx = headerIndex("zone");
-  const zones = new Set();
-
-  if (zoneIdx !== -1) {
-    rows.forEach((row) => {
-      const z = (row[zoneIdx] || "").trim();
-      if (z) zones.add(z);
-    });
-  }
-
-  const baseOption = document.createElement("option");
-  baseOption.value = "";
-  baseOption.textContent = zones.size
-    ? "Any zone in this city"
-    : "No zones found";
-  zoneSelect.appendChild(baseOption);
-
-  if (!zones.size) {
-    zoneSelect.disabled = true;
-    return;
-  }
-
-  zones.forEach((z) => {
-    const opt = document.createElement("option");
-    opt.value = z;
-    opt.textContent = z;
-    zoneSelect.appendChild(opt);
-  });
-
-  zoneSelect.disabled = false;
-}
-
 function initFeasibility() {
   const runBtn = document.getElementById("runFeasibility");
   if (runBtn) {
@@ -1199,10 +1280,8 @@ function initFeasibility() {
       feasCity.appendChild(opt);
     });
 
-    // When the city changes, refresh zone options and clear old results
     feasCity.addEventListener("change", () => {
       updateFeasZoneOptions();
-
       const summaryEl = document.getElementById("feasibilitySummary");
       const detailsEl = document.getElementById("feasibilityDetails");
       if (summaryEl) {
@@ -1216,19 +1295,59 @@ function initFeasibility() {
 
     // Initial zone state
     updateFeasZoneOptions();
-  } else {
-    // If for some reason zoning isn't ready yet, leave the selects as-is.
-    const zoneSelect = document.getElementById("feasZone");
-    if (zoneSelect) {
-      zoneSelect.innerHTML = "";
-      const opt = document.createElement("option");
-      opt.value = "";
-      opt.textContent = "Zones load once data is ready";
-      zoneSelect.appendChild(opt);
-      zoneSelect.disabled = true;
-    }
+  }
+
+  // Build a reusable parcel diagram scaffold if it doesn't exist yet
+  const diagramRoot = document.getElementById("feasDiagram");
+  if (diagramRoot && !diagramRoot.hasChildNodes()) {
+    const lotBox = document.createElement("div");
+    lotBox.className = "lot-box";
+    lotBox.id = "lotBox";
+
+    const lotLabel = document.createElement("div");
+    lotLabel.className = "lot-label";
+    lotLabel.id = "lotLabel";
+    lotLabel.textContent = "Lot";
+    lotBox.appendChild(lotLabel);
+
+    const buildableBox = document.createElement("div");
+    buildableBox.className = "buildable-box";
+    buildableBox.id = "buildableRect";
+
+    const buildableLabel = document.createElement("div");
+    buildableLabel.className = "buildable-label";
+    buildableLabel.id = "buildableLabel";
+    buildableLabel.textContent = "Buildable area";
+    buildableBox.appendChild(buildableLabel);
+
+    const primaryBox = document.createElement("div");
+    primaryBox.className = "primary-box";
+    primaryBox.id = "primaryRect";
+
+    const primaryLabel = document.createElement("div");
+    primaryLabel.className = "primary-label";
+    primaryLabel.id = "primaryLabel";
+    primaryLabel.textContent = "Primary";
+    primaryBox.appendChild(primaryLabel);
+
+    const aduBox = document.createElement("div");
+    aduBox.className = "adu-box";
+    aduBox.id = "aduRect";
+
+    const aduLabel = document.createElement("div");
+    aduLabel.className = "adu-label";
+    aduLabel.id = "aduLabel";
+    aduLabel.textContent = "ADU";
+    aduBox.appendChild(aduLabel);
+
+    lotBox.appendChild(buildableBox);
+    lotBox.appendChild(primaryBox);
+    lotBox.appendChild(aduBox);
+
+    diagramRoot.appendChild(lotBox);
   }
 }
+
 
 // =========================================
 // PERMITS TABLE (BASIC VERSION)
@@ -1303,6 +1422,56 @@ function initPermitsFilters() {
       cityFilter.appendChild(opt);
     });
   }
+function updateFeasZoneOptions() {
+  const citySelect = document.getElementById("feasCity");
+  const zoneSelect = document.getElementById("feasZone");
+  if (!zoneSelect) return;
+
+  const city = (citySelect?.value || "").trim();
+
+  zoneSelect.innerHTML = "";
+
+  if (!city) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Select a city first";
+    zoneSelect.appendChild(opt);
+    zoneSelect.disabled = true;
+    return;
+  }
+
+  const rows = state.zoning.byCity.get(city) || [];
+  const zoneIdx = headerIndex("zone");
+  const zones = new Set();
+
+  if (zoneIdx !== -1) {
+    rows.forEach((row) => {
+      const z = (row[zoneIdx] || "").toString().trim();
+      if (z) zones.add(z);
+    });
+  }
+
+  const baseOption = document.createElement("option");
+  baseOption.value = "";
+  baseOption.textContent = zones.size
+    ? "Any zone in this city"
+    : "No zones found";
+  zoneSelect.appendChild(baseOption);
+
+  if (!zones.size) {
+    zoneSelect.disabled = true;
+    return;
+  }
+
+  zones.forEach((z) => {
+    const opt = document.createElement("option");
+    opt.value = z;
+    opt.textContent = z;
+    zoneSelect.appendChild(opt);
+  });
+
+  zoneSelect.disabled = false;
+}
 
   // Pagination + filter listeners
   const yearFilterEl = document.getElementById("permitsYearFilter");
