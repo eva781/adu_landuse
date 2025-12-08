@@ -596,6 +596,24 @@ body::before {
   height: 18px;
   accent-color: var(--accent-coral);
 }
+.permits-pagination {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.permits-page-label {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.permits-pagination button[disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
 
 /* =========================================
    BUTTONS
