@@ -673,26 +673,66 @@ function updateFeasZoneOptions() {
 
   zoneSelect.disabled = false;
 }
-
-// Build the parcel diagram DOM inside #feasDiagram if not present
 function buildFeasDiagramShell() {
   const container = document.getElementById("feasDiagram");
-  if (!container || container.dataset.initialized === "1") return;
+  if (!container) return;
 
-  container.dataset.initialized = "1";
+  // Only initialize once
+  if (container.dataset.initialized === "true") return;
+  container.dataset.initialized = "true";
+
+  // Make sure the container has some height even before CSS kicks in
+  container.style.minHeight = "260px";
+  container.style.display = "flex";
+  container.style.alignItems = "stretch";
+  container.style.justifyContent = "center";
+
   container.innerHTML = `
-    <div class="lot-box" id="lotBox">
-      <div class="lot-label" id="lotLabel">Lot</div>
-      <div class="buildable-box" id="buildableRect"></div>
-      <div class="buildable-label" id="buildableLabel">Buildable area</div>
-      <div class="primary-box" id="primaryRect">
-        <span class="primary-label" id="primaryLabel">Primary home</span>
-      </div>
-      <div class="adu-box" id="aduRect">
-        <span class="adu-label" id="aduLabel">ADU</span>
+    <div class="parcel-stage">
+      <div class="lot-box" id="lotBox">
+        <div class="lot-label" id="lotLabel">Lot: — sf</div>
+
+        <div class="buildable-box" id="buildableRect">
+          <div class="buildable-label" id="buildableLabel">
+            Buildable envelope (conceptual)
+          </div>
+        </div>
+
+        <div class="primary-box" id="primaryRect">
+          <span class="primary-label" id="primaryLabel">Primary home</span>
+        </div>
+
+        <div class="adu-box" id="aduRect">
+          <span class="adu-label" id="aduLabel">ADU footprint</span>
+        </div>
+
+        <!-- Simple handles just for visual affordance -->
+        <div class="resize-handle lot-width-handle" id="lotWidthHandle" title="Lot width"></div>
+        <div class="resize-handle lot-depth-handle" id="lotDepthHandle" title="Lot depth"></div>
       </div>
     </div>
   `;
+
+  // Lightweight hover feedback on handles (no heavy drag logic)
+  const lotBox = document.getElementById("lotBox");
+  const widthHandle = document.getElementById("lotWidthHandle");
+  const depthHandle = document.getElementById("lotDepthHandle");
+
+  if (lotBox && widthHandle && depthHandle) {
+    widthHandle.addEventListener("mouseenter", () =>
+      lotBox.classList.add("lot-highlight-width")
+    );
+    widthHandle.addEventListener("mouseleave", () =>
+      lotBox.classList.remove("lot-highlight-width")
+    );
+
+    depthHandle.addEventListener("mouseenter", () =>
+      lotBox.classList.add("lot-highlight-depth")
+    );
+    depthHandle.addEventListener("mouseleave", () =>
+      lotBox.classList.remove("lot-highlight-depth")
+    );
+  }
 }
 
 // Data → diagram geometry
@@ -1614,7 +1654,7 @@ function runFeasibilityCheck() {
     // Fallback: approximate lot size from width × depth if needed
     if ((isNaN(lotSize) || !lotSize) && !isNaN(lotWidth) && !isNaN(lotDepth)) {
       lotSize = lotWidth * lotDepth;
-    }
+    }}
 
     const summaryEl = document.getElementById("feasibilitySummary");
     const detailsEl = document.getElementById("feasibilityDetails");
