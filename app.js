@@ -1301,12 +1301,7 @@ function renderCityScorecards() {
     container.appendChild(card);
   });
 }
-// =========================================
-// LOT-LEVEL FEASIBILITY CHECKER
-// =========================================
-// =========================================
-// LOT-LEVEL FEASIBILITY CHECKER
-// =========================================
+
 
 // Helpers reused across feasibility logic
 function headerIndex(colName) {
@@ -1610,7 +1605,18 @@ function renderFeasibilityDetails({
   `;
 }
 
-// Main feasibility runner
+// =========================================
+// LOT-LEVEL FEASIBILITY CHECKER
+// =========================================
+
+// Uses the earlier helpers defined above:
+// - headerIndex(colKey) with COL mapping
+// - getCell(row, colKey)
+// - getNumeric(row, colKey)
+// - buildFeasDiagramShell()
+// - renderFeasibilityDiagram(zoneRow, inputs)
+// - renderFeasibilityDetails(zoneRow, context)
+
 function runFeasibilityCheck() {
   if (!state.initialized.zoningLoaded) {
     return;
@@ -1654,7 +1660,7 @@ function runFeasibilityCheck() {
     // Fallback: approximate lot size from width × depth if needed
     if ((isNaN(lotSize) || !lotSize) && !isNaN(lotWidth) && !isNaN(lotDepth)) {
       lotSize = lotWidth * lotDepth;
-    }}
+    }
 
     const summaryEl = document.getElementById("feasibilitySummary");
     const detailsEl = document.getElementById("feasibilityDetails");
@@ -1730,7 +1736,6 @@ function runFeasibilityCheck() {
     const minLot = getNumeric(bestRow, "minLotSize");
     const maxSize = getNumeric(bestRow, "maxADUSize");
     const aduAllowed = getCell(bestRow, "aduAllowed");
-    const daduAllowed = getCell(bestRow, "daduAllowed");
     const zoneType = getCell(bestRow, "zoneType");
 
     let status = "unknown";
@@ -1766,19 +1771,19 @@ function runFeasibilityCheck() {
         </p>`;
     }
 
-    // Diagram + report
+    // Diagram + report (using the earlier helpers that know about zoneRow)
     buildFeasDiagramShell();
-    renderFeasibilityDiagram({
+    renderFeasibilityDiagram(bestRow, {
       lotSize,
       lotWidth,
       lotDepth,
       houseWidth,
       houseDepth,
-      status,
+      aduSize,
       hasAlley,
     });
 
-    renderFeasibilityDetails({
+    renderFeasibilityDetails(bestRow, {
       city,
       zone,
       zoneType,
@@ -1789,7 +1794,6 @@ function runFeasibilityCheck() {
       houseWidth,
       houseDepth,
       aduSize,
-      zoneRow: bestRow,
       hasTransit,
       hasAlley,
     });
@@ -1895,7 +1899,6 @@ function initFeasibility() {
     });
   }
 }
-
 
 // =========================================
 // PERMITS TABLE (BASIC VERSION)
