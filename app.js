@@ -694,146 +694,150 @@ function buildFeasDiagramShell() {
 }
 
 // Data → diagram geometry, incorporating setbacks
-function renderFeasibilityDiagram(zoneRow, inputs) {
+// Render the visual diagram based on lot + zone snapshot
+function renderFeasibilityDiagram({
+  lotSize,
+  lotWidth,
+  lotDepth,
+  houseWidth,
+  houseDepth,
+  aduSize,
+  status,
+  hasAlley,
+  zoneRow, // <- new
+}) {
   const lotBox = document.getElementById("lotBox");
-  const buildableRect = document.getElementById("buildableRect");
   const primaryRect = document.getElementById("primaryRect");
   const aduRect = document.getElementById("aduRect");
+  const buildableRect = document.getElementById("buildableRect");
   const lotLabel = document.getElementById("lotLabel");
   const buildableLabel = document.getElementById("buildableLabel");
-  const primaryLabel = document.getElementById("primaryLabel");
   const aduLabel = document.getElementById("aduLabel");
-  const diagramContainer = document.getElementById("feasDiagram");
+  const primaryLabel = document.getElementById("primaryLabel");
+  const container = document.getElementById("feasDiagram");
 
-  if (!lotBox || !buildableRect || !primaryRect || !aduRect || !diagramContainer) return;
-
-  const {
-    lotSize,
-    lotWidth,
-    lotDepth,
-    houseWidth,
-    houseDepth,
-    aduSize,
-    hasAlley
-  } = inputs;
-
-  const fmtInt = n =>
-    isNaN(n) || n <= 0 ? "—" : Math.round(n).toLocaleString();
-
-  // Fallback to square lot if dimensions missing
-  let w = !isNaN(lotWidth) && lotWidth > 0 ? lotWidth : Math.sqrt(lotSize || 1);
-  let d = !isNaN(lotDepth) && lotDepth > 0 ? lotDepth : Math.sqrt(lotSize || 1);
-  if (!w || !d) {
-    w = 100;
-    d = 100;
+  if (!lotBox || !primaryRect || !aduRect || !buildableRect || !container) {
+    return;
   }
 
-  // Parse DADU setbacks from zoning row
-  const rearStr = getCell(zoneRow, "daduRear");
-  const sideStr = getCell(zoneRow, "daduSideLotLine");
-  const streetStr = getCell(zoneRow, "daduStreetSide");
-  const fromPrimaryStr = getCell(zoneRow, "daduFromPrincipal");
+  // --- Normalize lot size ---------------------------------------------------
+  const effectiveLotSize =
+    !isNaN(lotSize) && lotSize > 0 ? lotSize : 4000; // fallback if blank
 
-  const numFromText = txt => {
-    if (!txt) return NaN;
-    const match = String(txt).match(/([0-9.]+)/);
-    return match ? parseFloat(match[1]) : NaN;
-  };
-
-  let rearFt = numFromText(rearStr);
-  let sideFt = numFromText(sideStr);
-  const streetFt = numFromText(streetStr);
-  const fromPrimaryFt = numFromText(fromPrimaryStr);
-
-  if (isNaN(rearFt)) rearFt = 10;
-  if (isNaN(sideFt)) sideFt = 5;
-
-  if (hasAlley) {
-    rearFt = Math.max(rearFt * 0.7, 5);
+  if (lotLabel) {
+    lotLabel.textContent = `Lot • ${effectiveLotSize.toLocaleString()} sf${
+      lotWidth && lotDepth ? ` (${lotWidth}′ × ${lotDepth}′)` : ""
+    }`;
   }
 
-  const frontFt = fromPrimaryFt && !isNaN(fromPrimaryFt) ? fromPrimaryFt : rearFt;
+  // --- Lot & building scaling ----------------------------------------------
+  const baseLot = Math.max(effectiveLotSize, 2000);
+  const lotScale = Math.sqrt(effectiveLotSize / baseLot);
 
-  // Convert to percentages of lot dimensions
-  const sidePct = Math.max(0, Math.min(40, (sideFt / w) * 100));
-  const frontPct = Math.max(0, Math.min(40, (frontFt / d) * 100));
-  const rearPct = Math.max(0, Math.min(40, (rearFt / d) * 100));
+  const primaryScale =
+    houseWidth && houseDepth
+      ? Math.sqrt((houseWidth * houseDepth) / 1000)
+      : 1;
 
-  const buildableWidthPct = Math.max(20, 100 - sidePct * 2);
-  const buildableHeightPct = Math.max(20, 100 - frontPct - rearPct);
+  const primaryWidthPct = Math.min(40 * primaryScale, 60);
+  const primaryDepthPct = Math.min(35 * primaryScale, 50);
 
-  // Buildable envelope
-  buildableRect.style.position = "absolute";
-  buildableRect.style.left = `${sidePct}%`;
-  buildableRect.style.right = `${sidePct}%`;
-  buildableRect.style.top = `${frontPct}%`;
-  buildableRect.style.bottom = `${rearPct}%`;
+  // --- Buildable envelope from coverage + setbacks -------------------------
+  let buildableWidthPct = 80;
+  let buildableDepthPct = 60;
 
-  // Primary home footprint
-  let primaryWidthPct = 35;
-  let primaryHeightPct = 30;
+  if (zoneRow) {
+    // 1) Coverage: max footprint as a fraction of lot area
+    const coveragePct = getNumeric(zoneRow, "maxLotCoverage"); // 0–100 or NaN
 
-  if (!isNaN(houseWidth) && houseWidth > 0) {
-    primaryWidthPct = Math.max(
-      15,
-      Math.min(60, (houseWidth / w) * buildableWidthPct)
-    );
+    if (!isNaN(coveragePct) && coveragePct > 0 && coveragePct <= 100) {
+      const coverageRatio = coveragePct / 100;
+      const approxFootprintRatio = Math.sqrt(coverageRatio);
+      buildableWidthPct = Math.max(
+        30,
+        Math.min(90, approxFootprintRatio * 100)
+      );
+      buildableDepthPct = Math.max(
+        30,
+        Math.min(90, approxFootprintRatio * 70)
+      );
+    }
+
+    // 2) Setbacks: shrink in from lot edges when we know width/depth
+    const frontSetback = getNumeric(zoneRow, "frontSetback");
+    const rearSetback = getNumeric(zoneRow, "rearSetback");
+    const sideSetback = getNumeric(zoneRow, "sideSetback");
+    const streetSideSetback = getNumeric(zoneRow, "streetSideSetback");
+
+    if (lotWidth && lotDepth) {
+      const left = !isNaN(sideSetback) ? sideSetback : 0;
+      const right = !isNaN(streetSideSetback) ? streetSideSetback : left;
+      const front = !isNaN(frontSetback) ? frontSetback : 0;
+      const rear = !isNaN(rearSetback) ? rearSetback : front;
+
+      const horizInsetPct = ((left + right) / lotWidth) * 100;
+      const vertInsetPct = ((front + rear) / lotDepth) * 100;
+
+      if (!isNaN(horizInsetPct) && horizInsetPct < 100) {
+        buildableWidthPct = Math.max(
+          20,
+          Math.min(buildableWidthPct, 100 - horizInsetPct)
+        );
+      }
+      if (!isNaN(vertInsetPct) && vertInsetPct < 100) {
+        buildableDepthPct = Math.max(
+          20,
+          Math.min(buildableDepthPct, 100 - vertInsetPct)
+        );
+      }
+    }
   }
-  if (!isNaN(houseDepth) && houseDepth > 0) {
-    primaryHeightPct = Math.max(
-      15,
-      Math.min(50, (houseDepth / d) * buildableHeightPct)
-    );
-  }
 
-  primaryRect.style.position = "absolute";
-  primaryRect.style.left = `${sidePct + 5}%`;
-  primaryRect.style.top = `${frontPct + 5}%`;
+  // Position buildable envelope centered within the 70% lot height
+  buildableRect.style.width = `${buildableWidthPct}%`;
+  buildableRect.style.height = `${buildableDepthPct}%`;
+  buildableRect.style.left = `${(100 - buildableWidthPct) / 2}%`;
+  buildableRect.style.top = `${(70 - buildableDepthPct) / 2}%`;
+
+  // Primary house – biased toward "front" (bottom) of parcel
   primaryRect.style.width = `${primaryWidthPct}%`;
-  primaryRect.style.height = `${primaryHeightPct}%`;
+  primaryRect.style.height = `${primaryDepthPct}%`;
+  primaryRect.style.left = "10%";
+  primaryRect.style.bottom = "10%";
 
-  // ADU footprint
-  let aduWidthPct = 22;
-  let aduHeightPct = 22;
+  // ADU – generally at rear; if alley, hug the alley side more clearly
+  const aduWidthPct = Math.min(primaryWidthPct * 0.7, 35);
+  const aduDepthPct = Math.min(primaryDepthPct * 0.7, 35);
 
-  if (!isNaN(aduSize) && aduSize > 0 && !isNaN(lotSize) && lotSize > 0) {
-    const footprintRatio = Math.min(aduSize / lotSize, 0.35);
-    const side = Math.sqrt(footprintRatio);
-    aduWidthPct = Math.max(10, Math.min(30, side * buildableWidthPct * 1.2));
-    aduHeightPct = Math.max(10, Math.min(30, side * buildableHeightPct * 1.2));
-  }
-
-  aduRect.style.position = "absolute";
   aduRect.style.width = `${aduWidthPct}%`;
-  aduRect.style.height = `${aduHeightPct}%`;
-  aduRect.style.left = `${100 - sidePct - aduWidthPct - 5}%`;
-  aduRect.style.top = `${100 - rearPct - aduHeightPct - 5}%`;
+  aduRect.style.height = `${aduDepthPct}%`;
+  aduRect.style.right = hasAlley ? "5%" : "10%";
+  aduRect.style.top = hasAlley ? "10%" : "20%";
+  aduRect.dataset.hasAlley = hasAlley ? "true" : "false";
 
   // Labels
-  if (lotLabel) {
-    lotLabel.textContent = `Lot: ${fmtInt(lotSize)} sf`;
-  }
   if (buildableLabel) {
-    buildableLabel.textContent = `Buildable envelope (setbacks approx. ${
-      fmtInt(frontFt)
-    }′ front / ${fmtInt(sideFt)}′ side / ${fmtInt(rearFt)}′ rear${
-      !isNaN(streetFt) ? `, ${fmtInt(streetFt)}′ street side` : ""
-    })`;
+    buildableLabel.textContent = "Buildable envelope (conceptual)";
   }
+
   if (primaryLabel) {
     primaryLabel.textContent = `Primary home${
-      !isNaN(houseWidth) && !isNaN(houseDepth) && houseWidth && houseDepth
-        ? ` · ${fmtInt(houseWidth)}′ × ${fmtInt(houseDepth)}′`
-        : ""
-    }`;
-  }
-  if (aduLabel) {
-    aduLabel.textContent = `ADU footprint${
-      !isNaN(aduSize) && aduSize ? ` · ${fmtInt(aduSize)} sf` : ""
+      houseWidth && houseDepth ? ` · ${houseWidth}′ × ${houseDepth}′` : ""
     }`;
   }
 
-  diagramContainer.dataset.status = inputs.status || "unknown";
+  if (aduLabel) {
+    const aduText =
+      aduSize && !isNaN(aduSize)
+        ? `ADU • ~${aduSize.toLocaleString()} sf`
+        : "ADU footprint (approx.)";
+
+    aduLabel.textContent = hasAlley
+      ? `${aduText} · alley-loaded`
+      : aduText;
+  }
+
+  container.dataset.status = status || "unknown";
 }
 
 // Detailed textual report
@@ -1126,25 +1130,28 @@ function runFeasibilityCheck() {
       diagramEl.dataset.status = status;
     }
 
-    // Ensure diagram shell exists, then update geometry + labels
+    // Diagram + report (using the best matching zoning row)
     buildFeasDiagramShell();
-    renderFeasibilityDiagram(bestRow, {
+
+    // 1) Diagram
+    renderFeasibilityDiagram({
       lotSize,
       lotWidth,
       lotDepth,
       houseWidth,
       houseDepth,
       aduSize,
-      hasTransit,
+      status,
       hasAlley,
-      status
+      zoneRow: bestRow,
     });
 
-    const zoneType = zoneTypeIdx !== -1 ? bestRow[zoneTypeIdx] : "";
-    renderFeasibilityDetails(bestRow, {
+    // 2) Detailed report
+    renderFeasibilityDetails({
       city,
       zone,
       zoneType,
+      status,
       lotSize,
       lotWidth,
       lotDepth,
@@ -1153,12 +1160,9 @@ function runFeasibilityCheck() {
       aduSize,
       hasTransit,
       hasAlley,
-      status
+      zoneRow: bestRow,
     });
-  } catch (err) {
-    console.error("Error in runFeasibilityCheck:", err);
-  }
-}
+
 
 function initFeasibilityUI() {
   if (!state.initialized.zoningLoaded) return;
