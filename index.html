@@ -7,7 +7,6 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- Sticky dark header / banner -->
   <header class="site-header" role="banner">
     <div class="header-inner">
       <div class="header-main">
@@ -18,8 +17,6 @@
           and review built ADU permit trends.
         </p>
       </div>
-
-      <!-- Primary navigation -->
       <nav class="site-nav" aria-label="Primary">
         <a href="#city-overview-title" class="nav-link nav-link--active">Dashboard</a>
         <a href="#design-system" class="nav-link">Design system</a>
@@ -28,9 +25,7 @@
   </header>
 
   <main class="page-main" role="main">
-    <!-- ============================
-         1) CITY OVERVIEW / SCORECARDS
-         ============================ -->
+    <!-- CITY OVERVIEW / SCORECARDS -->
     <section class="card scorecard" aria-labelledby="city-overview-title">
       <h2 id="city-overview-title">City overview</h2>
       <p class="scorecard-help">
@@ -39,9 +34,7 @@
       <div id="cityScorecards" class="scorecard-grid"></div>
     </section>
 
-    <!-- ============================
-         2) REGULATIONS TABLE + FILTERS
-         ============================ -->
+    <!-- REGULATIONS TABLE + FILTERS -->
     <section class="card filters-card" aria-labelledby="regulations-title">
       <div class="section-heading">
         <div class="eyebrow">Data explorer</div>
@@ -49,44 +42,29 @@
           <h2 id="regulations-title">ADU / DADU regulations by zone</h2>
           <p class="section-help">
             Filter the dataset and compare key zoning rules across King County jurisdictions.
-            Use the search to look across all columns.
           </p>
         </div>
       </div>
 
       <div class="reg-controls">
         <div class="reg-filters">
-          <!-- Select All Checkbox -->
           <label class="checkbox-label">
             <input type="checkbox" id="selectAllCities">
             <span>Select All Cities</span>
           </label>
-
-          <!-- City Filter -->
           <select id="cityFilter"></select>
-
-          <!-- Zone Filter -->
           <select id="zoneFilter"></select>
-
-          <!-- Zone Type Filter -->
           <select id="zoneTypeFilter"></select>
-
-          <!-- ADU Allowed Filter -->
           <select id="aduFilter"></select>
-
-          <!-- DADU Allowed Filter -->
           <select id="daduFilter"></select>
-
-          <!-- Owner Occupancy Filter -->
           <select id="ownerOccFilter"></select>
         </div>
 
         <div class="reg-search-row">
           <div class="search-group">
             <label for="searchInput">Search all fields:</label>
-            <input id="searchInput" type="text" placeholder="Type city, zone, or keyword…" />
+            <input id="searchInput" type="text" placeholder="Type city, zone, or keyword..." />
           </div>
-
           <div class="reg-search-actions">
             <button id="searchRegulationsBtn" class="reg-search-btn" type="button">
               Search Regulations
@@ -96,13 +74,11 @@
         </div>
       </div>
 
-      <!-- Placeholder (shown before search) -->
       <div class="reg-results-placeholder" id="regPlaceholder">
         <h3>Ready to Search</h3>
         <p>Select filters above, then click "Search Regulations" to view results.</p>
       </div>
 
-      <!-- Table Wrapper (hidden initially) -->
       <div class="reg-table-wrapper hidden" id="regTableWrapper">
         <table class="reg-table" id="resultsTable">
           <thead id="tableHead"></thead>
@@ -112,23 +88,18 @@
       </div>
 
       <p id="summary" class="fine-print" aria-live="polite">
-        Data and diagrams are simplified for feasibility screening and do not replace a detailed code review
-        or conversation with planning staff.
+        Data and diagrams are simplified for feasibility screening.
       </p>
     </section>
 
-    <!-- ============================
-         3) LOT-LEVEL FEASIBILITY CHECKER
-         ============================ -->
+    <!-- LOT-LEVEL FEASIBILITY CHECKER -->
     <section class="card feasibility-card" aria-labelledby="feasibility-title">
       <h2 id="feasibility-title">Lot-level ADU feasibility checker</h2>
       <p class="section-help">
-        Pick a city and zone from the dataset, then plug in a specific lot and target ADU size to see a quick
-        feasibility snapshot and a diagram of the parcel.
+        Pick a city and zone, then plug in lot and ADU details to see a feasibility snapshot.
       </p>
 
       <div class="feasibility-layout">
-        <!-- Inputs + summary -->
         <div>
           <h3 class="subheading">Inputs</h3>
           <div class="feasibility-grid">
@@ -184,13 +155,11 @@
           <div id="feasibilitySummary" class="feasibility-summary"></div>
         </div>
 
-        <!-- Diagram -->
         <div class="feasibility-canvas">
           <div class="parcel-card">
             <h3 class="subheading">Parcel diagram</h3>
             <p class="parcel-howto">
-              Drag and resize the existing home and ADU boxes; lot width and depth can also be adjusted
-              using the green handles. Labels update as the shapes change.
+              Visual representation of your lot with buildable envelope, existing home, and ADU placement.
             </p>
             <div id="feasDiagram"></div>
           </div>
@@ -200,17 +169,14 @@
       <div id="feasibilityDetails" class="feasibility-details"></div>
     </section>
 
-    <!-- ============================
-         4) ADU PERMITS & PRODUCTION
-         ============================ -->
+    <!-- ADU PERMITS & PRODUCTION -->
     <section class="card permits-card" aria-labelledby="permits-title">
       <div class="section-heading">
         <div class="eyebrow">Production tracking</div>
         <div>
           <h2 id="permits-title">ADU permits &amp; production</h2>
           <p class="section-help">
-            Historic ADU permit counts by jurisdiction, based on your permits CSV. Use the filters to focus
-            on a specific city or time period.
+            Historic ADU permit counts by jurisdiction (2024-2025 only).
           </p>
         </div>
       </div>
@@ -239,60 +205,34 @@
                 <th>City</th>
                 <th>Project</th>
                 <th>ADU type</th>
-                <th>Status</th>
-                <th>Size (sf)</th>
-                <th>Zone</th>
+                <th>Applicant</th>
                 <th>Approval date</th>
-                <th>Permit #</th>
-                <th>Parcel link</th>
+                <th>Status</th>
+                <th>Link</th>
               </tr>
             </thead>
             <tbody id="permitsTableBody"></tbody>
           </table>
           <div id="permitsEmpty" class="empty-state" aria-live="polite" hidden>
             <div class="empty-title">No permits found</div>
-            <p class="empty-copy">Refine or clear the filters to bring permit records back into view.</p>
+            <p class="empty-copy">Refine or clear filters.</p>
           </div>
         </div>
       </div>
-    <div class="permits-pagination" aria-label="Permit results pagination">
-  <button
-    id="permitsPrev"
-    class="btn-outline"
-    type="button"
-    aria-label="Previous permits page"
-  >
-    ←
-  </button>
-  <span id="permitsPageLabel" class="permits-page-label"></span>
-  <button
-    id="permitsNext"
-    class="btn-outline"
-    type="button"
-    aria-label="Next permits page"
-  >
-    →
-  </button>
-</div>
-
     </section>
 
-    <!-- ============================
-         5) DESIGN SYSTEM (TOKENS & COMPONENTS)
-         ============================ -->
+    <!-- DESIGN SYSTEM -->
     <section class="card ds-card" id="design-system" aria-labelledby="design-system-title">
       <header class="ds-header">
         <div class="eyebrow">Design system</div>
         <div>
           <h2 id="design-system-title">ADU Explorer design language</h2>
           <p class="section-help">
-            Internal reference for color tokens, typography, and core components used in this app.
-            Inspired by Material Design, IBM Carbon, Atlassian, Lightning, Polaris, GOV.UK, Fluent, Airbnb, Primer, Mailchimp, and USWDS.
+            Internal reference for color tokens, typography, and core components.
           </p>
         </div>
       </header>
 
-      <!-- Color tokens -->
       <section class="ds-section" aria-labelledby="ds-colors-title">
         <h3 id="ds-colors-title" class="subheading">Color tokens</h3>
         <div class="ds-color-grid">
@@ -301,7 +241,7 @@
             <div class="ds-color-meta">
               <div class="ds-token-name">--teal-700</div>
               <div class="ds-token-hex">#084C61</div>
-              <div class="ds-token-role">Primary actions, header</div>
+              <div class="ds-token-role">Primary actions</div>
             </div>
           </article>
           <article class="ds-color-swatch" aria-label="Primary indigo">
@@ -309,99 +249,20 @@
             <div class="ds-color-meta">
               <div class="ds-token-name">--indigo-500</div>
               <div class="ds-token-hex">#4D5382</div>
-              <div class="ds-token-role">Emphasis, metrics, accents</div>
-            </div>
-          </article>
-          <article class="ds-color-swatch" aria-label="Warm brown accent">
-            <div class="ds-color-swatch-chip ds-color--umber"></div>
-            <div class="ds-color-meta">
-              <div class="ds-token-name">--umber-700</div>
-              <div class="ds-token-hex">#432818</div>
-              <div class="ds-token-role">Warnings, special highlights</div>
-            </div>
-          </article>
-          <article class="ds-color-swatch" aria-label="Soft mint background">
-            <div class="ds-color-swatch-chip ds-color--mint"></div>
-            <div class="ds-color-meta">
-              <div class="ds-token-name">--mint-50</div>
-              <div class="ds-token-hex">#E2EFDE</div>
-              <div class="ds-token-role">Page background, subtle fills</div>
-            </div>
-          </article>
-          <article class="ds-color-swatch" aria-label="Slate neutral">
-            <div class="ds-color-swatch-chip ds-color--slate"></div>
-            <div class="ds-color-meta">
-              <div class="ds-token-name">--slate-500</div>
-              <div class="ds-token-hex">#808F87</div>
-              <div class="ds-token-role">Borders, muted text</div>
+              <div class="ds-token-role">Emphasis, metrics</div>
             </div>
           </article>
         </div>
       </section>
 
-      <!-- Type scale -->
       <section class="ds-section" aria-labelledby="ds-type-title">
         <h3 id="ds-type-title" class="subheading">Typography scale</h3>
         <div class="ds-type-grid">
           <div class="ds-type-sample">
             <div class="ds-type-label">Display / H1</div>
             <div class="ds-type-h1">King County ADU Explorer</div>
-            <div class="ds-type-meta">Space Grotesk · 1.6–2rem · -0.025em tracking</div>
+            <div class="ds-type-meta">Space Grotesk · 1.6-2rem</div>
           </div>
-          <div class="ds-type-sample">
-            <div class="ds-type-label">Section title / H2</div>
-            <div class="ds-type-h2">ADU / DADU regulations by zone</div>
-            <div class="ds-type-meta">Space Grotesk · 1.3rem</div>
-          </div>
-          <div class="ds-type-sample">
-            <div class="ds-type-label">Body</div>
-            <p class="ds-type-body">
-              Compare zoning standards, run feasibility checks, and review permit trends in a single workspace.
-            </p>
-            <div class="ds-type-meta">Inter / 0.95rem–1rem · 1.6 line-height</div>
-          </div>
-          <div class="ds-type-sample">
-            <div class="ds-type-label">Eyebrow</div>
-            <div class="eyebrow">Data explorer</div>
-            <div class="ds-type-meta">Uppercase · 0.75rem · 0.16em tracking</div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Core components -->
-      <section class="ds-section" aria-labelledby="ds-components-title">
-        <h3 id="ds-components-title" class="subheading">Core components</h3>
-        <div class="ds-component-grid">
-          <article class="ds-component">
-            <h4 class="ds-component-title">Buttons</h4>
-            <div class="ds-component-row">
-              <button class="btn-primary" type="button">Primary action</button>
-              <button class="btn-secondary" type="button">Secondary</button>
-              <button class="btn-outline" type="button">Ghost / outline</button>
-            </div>
-          </article>
-
-          <article class="ds-component">
-            <h4 class="ds-component-title">Chips &amp; tags</h4>
-            <div class="ds-component-row">
-              <span class="eyebrow">Production tracking</span>
-              <span class="permit-tag">Transit bonus</span>
-              <span class="permit-tag">Alley access</span>
-            </div>
-          </article>
-
-          <article class="ds-component">
-            <h4 class="ds-component-title">Card shell</h4>
-            <div class="ds-component-row">
-              <div class="card ds-card-demo">
-                <h3 class="subheading">Card title</h3>
-                <p class="section-help">
-                  Cards group a single analytical task: overview, regulations, feasibility, permits, or system docs.
-                </p>
-                <button class="btn-primary" type="button">Primary CTA</button>
-              </div>
-            </div>
-          </article>
         </div>
       </section>
     </section>
@@ -409,8 +270,7 @@
 
   <footer class="page-footer" role="contentinfo">
     <p class="fine-print">
-      Data and diagrams are simplified for feasibility screening and do not replace a detailed code review
-      or conversation with planning staff.
+      Data and diagrams are for screening only and do not replace code review.
     </p>
   </footer>
 
