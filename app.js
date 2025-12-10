@@ -1,327 +1,548 @@
-// =========================================
-// King County ADU Explorer - app.js (refactored foundation)
-// =========================================
-//
-// Goals of this rewrite:
-// - Single clear entry point (initApp)
-// - Centralized state object (no random globals)
-// - Robust CSV loading & parsing
-// - Reusable zoning filter logic
-// - Clean separation between: data, domain logic, and UI
-// - All DOM lookups happen after DOMContentLoaded
-//
-// This file is intentionally "framework-free" (vanilla JS only)
-// so it runs happily on GitHub Pages or any static hosting.
-
 "use strict";
 
-// =========================================
-// CONFIG
-// =========================================
+/* =========================================================
+   CONFIG & COLUMN MAPPING
+   ========================================================= */
 
-const CSV_URL = "data.csv";
-const PERMITS_URL = "adu_permits.csv";
+const ZONING_CSV_URL = "data.csv";
+const PERMITS_CSV_URL = "adu_permits.csv";
 
-// Column name mapping for zoning CSV
-// Only keys we actively use are listed here.
 const COL = {
-  // Identity / filters
   city: "City",
   county: "County",
   state: "State",
   zone: "Zone",
   zoneType: "Zone_Type",
-
-  // Site minimums & intensity
-  minLotSize: "Min_Lot_Size_Sqft",
-  density: "Residential_Density",
-  maxImpervious: "Max_Imprevious_Surface",
-  maxLotCoverage: "Max_Lot_Coverage_Percent",
-  maxFAR: "Max_FAR",
-  maxBuildingHeight: "Max_Building_Height",
-
-  // Principal structure setbacks
-  principalFront: "Principal_Min_Front_Setback_ft",
-  principalStreetSide: "Principal_Min_Street_Side_Setback",
-
-  // ADU / DADU allowance & intensity
   aduAllowed: "ADU_Allowed",
   daduAllowed: "DADU_Allowed",
-  ownerOcc: "Owner_Occupancy_Required",
-  maxADUs: "Max_ADUs/DADUs_Per_Dwelling_Unit",
-  aduParkingRequired: "ADU_Parking_Required",
-  aduParkingTransitExempt: "ADU_Parking_Exempt_If_Transit",
-  minADUSize: "Min_ADU+DADU_Size_Sqft",
-  maxADUSizePct: "Max_ADU/DADU_Size_Percent_Primary/Lot",
-  maxADUSize: "Max_ADU_Size_Sqft",
-  aduSizeNotes: "ADU_Size_Notes",
-  maxADUHeight: "Max_ADU_Height_ft",
-  maxDADUSize: "Max_DADU_Size_Sqft",
-  maxDADUHeight: "DADU_Max_Height_ft",
-
-  // DADU setbacks
-  daduRear: "DADU_Min_Rear_Setback",
-  daduSideLotLine: "DADU_Min_LotLine_Side _Setback",
-  daduStreetSide: "DADU_Min_Street_Side_Setback",
-  daduFromPrincipal: "DADU_Min_Setback_From_Principal",
-
-  // Notes / meta
-  greenscapeNotes: "Greenscape_Notes",
-  impactFees: "Fee",
-  lastReviewed: "Last_Reviewed_Date",
+  aduType: "ADU_Type",
+  ownerOcc: "Owner_Occupancy",
+  minLotSize: "Min_Lot_Size_sf",
+  maxADUSize: "Max_ADU_Size_sf",
+  maxDADUSize: "Max_DADU_Size_sf",
+  maxFAR: "Max_FAR",
+  maxLotCoverage: "Max_Lot_Coverage",
+  maxHeight: "Max_Building_Height_ft",
+  aduParking: "ADU_Parking",
+  aduParkingTransitExempt: "ADU_Parking_Transit_Exempt",
+  greenscape: "Greenscape_Notes",
+  impactFees: "Impact_Fees",
+  lastReviewed: "Last_Reviewed",
+  daduRear: "DADU_Rear_Setback_ft",
+  daduSideLotLine: "DADU_Side_Lot_Line_Setback_ft",
+  daduStreetSide: "DADU_Street_Side_Setback_ft",
+  daduFromPrincipal: "DADU_Separation_From_Principal_ft"
 };
 
-// =========================================
-// GLOBAL STATE
-// =========================================
+/* =========================================================
+   GLOBAL STATE
+   ========================================================= */
 
 const state = {
   zoning: {
     headers: [],
-    rows: [],        // full CSV rows (arrays)
-    byCity: new Map(),
-    filteredRows: [], // used for regulations table
+    rows: [],
+    byCity: new Map() // city -> rows[]
   },
   permits: {
     headers: [],
     rows: [],
-    filteredRows: [],
-  },
-  ui: {
-    // Regulations table UI refs – populated in initRegulationsUI
-    selectAllCities: null,
-    searchButton: null,
-    placeholder: null,
-    tableWrapper: null,
-    summaryEl: null,
+    filtered: [],
+    currentPage: 1,
+    pageSize: 5
   },
   initialized: {
     zoningLoaded: false,
-    permitsLoaded: false,
+    permitsLoaded: false
   },
+  ui: {
+    selectAllCities: null,
+    cityFilter: null,
+    zoneFilter: null,
+    zoneTypeFilter: null,
+    aduFilter: null,
+    daduFilter: null,
+    ownerOccFilter: null,
+    searchInput: null,
+    regTableBody: null,
+    regResultsPlaceholder: null,
+    regTableWrapper: null,
+    scorecardContainer: null,
+    permitsCityFilter: null,
+    permitsYearFilter: null,
+    permitsSummary: null,
+    permitsTableBody: null,
+    permitsPagerLabel: null,
+    permitsPrevBtn: null,
+    permitsNextBtn: null
+  }
 };
 
-// =========================================
-// PERFORMANCE LIMITS
-// =========================================
-// To avoid the UI feeling "hung" on large CSVs, we cap how many rows
-// we render at once in heavy tables. The user can always narrow results
-// with filters or search.
-const MAX_REG_ROWS = 400;
-const MAX_PERMIT_ROWS = 400;
+/* =========================================================
+   CSV PARSER (ROBUST ENOUGH FOR QUOTED COMMAS)
+   ========================================================= */
 
-// =========================================
-// CSV PARSING
-// =========================================
-// Fully RFC4180-style CSV parser:
-// - Handles commas inside quoted fields
-// - Handles embedded newlines inside quoted fields
-// - Handles escaped quotes ("") inside quoted fields
 function parseCSV(text) {
-  // Strip BOM if present
-  if (text && text.charCodeAt(0) === 0xfeff) {
-    text = text.slice(1);
-  }
-
   const rows = [];
   let row = [];
   let value = "";
-  let insideQuotes = false;
-  let i = 0;
-  const n = text.length;
+  let inQuotes = false;
 
-  while (i < n) {
+  for (let i = 0; i < text.length; i++) {
     const c = text[i];
 
-    if (insideQuotes) {
-      if (c === '"') {
-        const next = i + 1 < n ? text[i + 1] : null;
-        if (next === '"') {
-          // Escaped quote ("")
-          value += '"';
-          i += 2;
-        } else {
-          // Closing quote
-          insideQuotes = false;
-          i += 1;
-        }
+    if (c === '"') {
+      // Escaped quote
+      if (inQuotes && text[i + 1] === '"') {
+        value += '"';
+        i++;
       } else {
-        // Any character inside quotes, including newlines and commas
-        value += c;
-        i += 1;
+        inQuotes = !inQuotes;
       }
-    } else {
-      if (c === '"') {
-        // Opening quote
-        insideQuotes = true;
-        i += 1;
-      } else if (c === ",") {
-        // Field terminator
+    } else if (c === "," && !inQuotes) {
+      row.push(value);
+      value = "";
+    } else if ((c === "\n" || c === "\r") && !inQuotes) {
+      if (value !== "" || row.length > 0) {
         row.push(value);
-        value = "";
-        i += 1;
-      } else if (c === "\r" || c === "\n") {
-        // End of record
-        row.push(value);
-        value = "";
         rows.push(row);
         row = [];
-
-        // Handle CRLF
-        if (c === "\r" && i + 1 < n && text[i + 1] === "\n") {
-          i += 2;
-        } else {
-          i += 1;
-        }
-
-        // Skip any additional newlines
-        while (i < n && (text[i] === "\r" || text[i] === "\n")) {
-          i += 1;
-        }
-      } else {
-        // Regular character outside quotes
-        value += c;
-        i += 1;
+        value = "";
       }
+      // swallow CRLF pairs
+      if (c === "\r" && text[i + 1] === "\n") i++;
+    } else {
+      value += c;
     }
   }
 
-  // Flush last row if there’s remaining content
-  if (value !== "" || row.length) {
+  if (value !== "" || row.length > 0) {
     row.push(value);
     rows.push(row);
   }
 
-  return rows;
+  return rows.filter(r => r.length && !(r.length === 1 && r[0].trim() === ""));
 }
 
+/* =========================================================
+   GENERIC HELPERS
+   ========================================================= */
 
-// =========================================
-// ZONING DATA LOADING & INDEXING
-// =========================================
+function safeText(s) {
+  if (s == null) return "";
+  return String(s);
+}
 
+// Use header text instead of raw index; tolerant of case/spacing
 function headerIndex(colKey) {
-  const headers = state.zoning.headers;
-  if (!headers || !headers.length) return -1;
-  const name = COL[colKey] || colKey;
-  return headers.indexOf(name);
+  if (!state.zoning.headers || !COL[colKey]) return -1;
+  return state.zoning.headers.findIndex(
+    h =>
+      h &&
+      h.toString().toLowerCase().trim() === COL[colKey].toLowerCase().trim()
+  );
 }
 
 function getCell(row, colKey) {
+  if (!row) return "";
   const idx = headerIndex(colKey);
   if (idx === -1) return "";
-  return row[idx] || "";
+  return safeText(row[idx]).trim();
 }
 
 function getNumeric(row, colKey) {
-  const v = getCell(row, colKey);
-  if (!v) return NaN;
-  const num = parseFloat(String(v).replace(/[^0-9.\-]/g, ""));
-  return isNaN(num) ? NaN : num;
+  const raw = getCell(row, colKey);
+  if (!raw) return NaN;
+  const cleaned = raw.replace(/[^0-9.\-]/g, "");
+  return cleaned ? parseFloat(cleaned) : NaN;
 }
 
-async function loadZoningData() {
-  const res = await fetch(CSV_URL);
-  if (!res.ok) {
-    throw new Error(`Failed to load zoning CSV: ${res.status}`);
-  }
-  const text = await res.text();
-  const rows = parseCSV(text);
-  if (!rows.length) throw new Error("Zoning CSV is empty");
+/* =========================================================
+   DATA LOADING
+   ========================================================= */
 
-  state.zoning.headers = rows[0];
-  // Filter out totally empty lines
-  state.zoning.rows = rows.slice(1).filter((r) =>
-    r.some((cell) => cell && String(cell).trim() !== "")
+async function loadZoningCsv() {
+  try {
+    const resp = await fetch(ZONING_CSV_URL, { cache: "no-store" });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const text = await resp.text();
+    const rows = parseCSV(text);
+    if (!rows.length) throw new Error("No rows in zoning CSV");
+
+    const [headerRow, ...dataRows] = rows;
+    state.zoning.headers = headerRow;
+    state.zoning.rows = dataRows;
+
+    // Group by city
+    const cityIdx = state.zoning.headers.findIndex(
+      h => h && h.toLowerCase().trim() === COL.city.toLowerCase().trim()
+    );
+    state.zoning.byCity.clear();
+
+    dataRows.forEach(r => {
+      const cityName = safeText(r[cityIdx] || "").trim();
+      if (!cityName) return;
+      if (!state.zoning.byCity.has(cityName)) {
+        state.zoning.byCity.set(cityName, []);
+      }
+      state.zoning.byCity.get(cityName).push(r);
+    });
+
+    state.initialized.zoningLoaded = true;
+  } catch (err) {
+    console.error("Error loading zoning CSV:", err);
+  }
+}
+
+async function loadPermitsCsv() {
+  try {
+    const resp = await fetch(PERMITS_CSV_URL, { cache: "no-store" });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const text = await resp.text();
+    const rows = parseCSV(text);
+    if (!rows.length) throw new Error("No rows in permits CSV");
+
+    const [headerRow, ...dataRows] = rows;
+    state.permits.headers = headerRow;
+
+    // Try to determine year column from headers
+    const h = headerRow.map(hd => hd.toString().toLowerCase());
+    const yearIdx = h.findIndex(hd => hd.includes("year"));
+    const approvalIdx = h.findIndex(
+      hd =>
+        (hd.includes("approval") && hd.includes("date")) ||
+        (hd.includes("issued") && hd.includes("date"))
+    );
+
+    const filtered = [];
+
+    dataRows.forEach(r => {
+      let year = NaN;
+
+      if (yearIdx !== -1) {
+        year = parseInt((r[yearIdx] || "").toString().slice(0, 4), 10);
+      } else if (approvalIdx !== -1) {
+        const raw = safeText(r[approvalIdx]);
+        const match = raw.match(/(20[0-9]{2})/);
+        if (match) year = parseInt(match[1], 10);
+      }
+
+      if (!isNaN(year) && year >= 2024 && year <= 2025) {
+        // Only keep 2024–2025 permits
+        filtered.push(r);
+      }
+    });
+
+    state.permits.rows = filtered;
+    state.permits.filtered = filtered.slice();
+    state.initialized.permitsLoaded = true;
+  } catch (err) {
+    console.error("Error loading permits CSV:", err);
+  }
+}
+
+/* =========================================================
+   SCORECARDS
+   ========================================================= */
+
+function computeCityMetrics(cityRows) {
+  const n = cityRows.length;
+  if (!n) return { n: 0, aduYes: 0, daduYes: 0, score: 0, grade: "—" };
+
+  let aduYes = 0;
+  let daduYes = 0;
+
+  cityRows.forEach(r => {
+    const adu = getCell(r, "aduAllowed").toLowerCase();
+    const dadu = getCell(r, "daduAllowed").toLowerCase();
+    if (adu.includes("yes")) aduYes++;
+    if (dadu.includes("yes")) daduYes++;
+  });
+
+  const aduRatio = aduYes / n;
+  const daduRatio = daduYes / n;
+  const score = Math.round((aduRatio * 0.6 + daduRatio * 0.4) * 100);
+
+  let grade = "C";
+  if (score >= 90) grade = "A+";
+  else if (score >= 80) grade = "A";
+  else if (score >= 70) grade = "B";
+  else if (score >= 60) grade = "B-";
+  else if (score >= 50) grade = "C+";
+  else if (score >= 40) grade = "C";
+  else if (score >= 30) grade = "D";
+  else grade = "F";
+
+  return { n, aduYes, daduYes, score, grade };
+}
+
+function renderCityScorecards() {
+  const container = document.getElementById("cityScorecards");
+  state.ui.scorecardContainer = container;
+  if (!container || !state.initialized.zoningLoaded) return;
+
+  container.innerHTML = "";
+
+  const cities = Array.from(state.zoning.byCity.keys()).sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: "base" })
   );
 
-  indexZoningByCity();
-  state.initialized.zoningLoaded = true;
-}
+  cities.forEach(city => {
+    const rows = state.zoning.byCity.get(city) || [];
+    const metrics = computeCityMetrics(rows);
 
-function indexZoningByCity() {
-  const cityIdx = headerIndex("city");
-  if (cityIdx === -1) return;
+    const card = document.createElement("article");
+    card.className = "scorecard-item city-card";
+    card.setAttribute("role", "button");
+    card.setAttribute("tabindex", "0");
+    card.setAttribute("aria-label", `Filter regulations table for ${city}`);
 
-  const byCity = new Map();
-  for (const row of state.zoning.rows) {
-    const city = (row[cityIdx] || "").trim();
-    if (!city) continue;
-    if (!byCity.has(city)) byCity.set(city, []);
-    byCity.get(city).push(row);
-  }
-  state.zoning.byCity = byCity;
-}
+    card.innerHTML = `
+      <header class="scorecard-header">
+        <h3 class="scorecard-city">${city}</h3>
+        <div class="scorecard-grade">${metrics.grade}</div>
+      </header>
+      <div class="scorecard-bar-wrap">
+        <div class="scorecard-bar" style="width: ${metrics.score}%"></div>
+      </div>
+      <ul class="scorecard-bullets">
+        <li>ADU allowed in ${metrics.aduYes} of ${metrics.n} zones</li>
+        <li>DADU allowed in ${metrics.daduYes} of ${metrics.n} zones</li>
+        <li>Flexibility score: ${metrics.score}/100</li>
+      </ul>
+    `;
 
-// =========================================
-// PERMITS DATA
-// =========================================
+    card.style.cursor = "pointer";
+    const activate = () => {
+      const cityFilter = document.getElementById("cityFilter");
+      if (cityFilter) {
+        cityFilter.value = city;
+        if (state.ui.selectAllCities) {
+          state.ui.selectAllCities.checked = false;
+          cityFilter.disabled = false;
+        }
+      }
+      performRegulationsSearch();
 
-function pHeaderIndex(colName) {
-  const headers = state.permits.headers;
-  if (!headers || !headers.length) return -1;
-  return headers.indexOf(colName);
-}
+      const regsSection = document.querySelector(".filters-card");
+      if (regsSection && regsSection.scrollIntoView) {
+        regsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    };
 
-function getPermitCell(row, colName) {
-  const idx = pHeaderIndex(colName);
-  if (idx === -1) return "";
-  return row[idx] || "";
-}
+    card.addEventListener("click", activate);
+    card.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        activate();
+      }
+    });
 
-async function loadPermitsData() {
-  try {
-    const res = await fetch(PERMITS_URL);
-    if (!res.ok) {
-      console.warn("Permits CSV not found or failed to load:", res.status);
-      return;
-    }
-    const text = await res.text();
-    const rows = parseCSV(text);
-    if (!rows.length) return;
-state.permits.headers = rows[0];
-
-// Filter out empty rows first
-let parsedRows = rows.slice(1).filter((r) =>
-  r.some((cell) => cell && String(cell).trim() !== "")
-);
-
-// --- FILTER TO ONLY 2024 + 2025 PERMITS ---
-const yearCol = state.permits.headers.indexOf("Year");  // adjust if your column is named differently
-
-if (yearCol !== -1) {
-  parsedRows = parsedRows.filter((row) => {
-    const year = parseInt((row[yearCol] || "").toString().trim(), 10);
-    return year === 2024 || year === 2025;
+    container.appendChild(card);
   });
 }
 
-state.permits.rows = parsedRows;
-state.permits.filteredRows = parsedRows.slice();
+/* =========================================================
+   REGULATIONS TABLE + FILTERS
+   ========================================================= */
 
-    state.initialized.permitsLoaded = true;
-  } catch (err) {
-    console.warn("Error loading permits CSV:", err);
+function initRegulationsUI() {
+  state.ui.selectAllCities = document.getElementById("selectAllCities");
+  state.ui.cityFilter = document.getElementById("cityFilter");
+  state.ui.zoneFilter = document.getElementById("zoneFilter");
+  state.ui.zoneTypeFilter = document.getElementById("zoneTypeFilter");
+  state.ui.aduFilter = document.getElementById("aduFilter");
+  state.ui.daduFilter = document.getElementById("daduFilter");
+  state.ui.ownerOccFilter = document.getElementById("ownerOccFilter");
+  state.ui.searchInput = document.getElementById("searchInput");
+  state.ui.regTableWrapper = document.querySelector(
+    ".reg-table-wrapper"
+  );
+  state.ui.regResultsPlaceholder =
+    document.querySelector(".reg-results-placeholder");
+  const regTable = document.querySelector(".reg-table");
+  state.ui.regTableBody = regTable
+    ? regTable.querySelector("tbody")
+    : null;
+
+  if (!state.initialized.zoningLoaded) return;
+
+  // Populate filter options from dataset
+  populateFilterSelect(state.ui.cityFilter, state.zoning.rows, COL.city);
+  populateFilterSelect(
+    state.ui.zoneTypeFilter,
+    state.zoning.rows,
+    COL.zoneType
+  );
+  populateFilterSelect(
+    state.ui.aduFilter,
+    state.zoning.rows,
+    COL.aduAllowed
+  );
+  populateFilterSelect(
+    state.ui.daduFilter,
+    state.zoning.rows,
+    COL.daduAllowed
+  );
+  populateFilterSelect(
+    state.ui.ownerOccFilter,
+    state.zoning.rows,
+    COL.ownerOcc
+  );
+
+  // Zone filter will be populated dynamically after city selection
+  if (state.ui.zoneFilter) {
+    state.ui.zoneFilter.innerHTML = "";
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "All zones";
+    state.ui.zoneFilter.appendChild(opt);
   }
+
+  if (state.ui.selectAllCities && state.ui.cityFilter) {
+    state.ui.selectAllCities.addEventListener("change", e => {
+      const checked = e.target.checked;
+      state.ui.cityFilter.disabled = checked;
+      if (checked) {
+        state.ui.cityFilter.value = "";
+        // When all cities are selected, zone options should be global again
+        populateZoneFilterForCity("");
+      }
+    });
+  }
+
+  if (state.ui.cityFilter) {
+    state.ui.cityFilter.addEventListener("change", () => {
+      const cityVal = state.ui.cityFilter.value;
+      populateZoneFilterForCity(cityVal);
+    });
+  }
+
+  const searchBtn = document.getElementById("searchRegulationsBtn");
+  const clearBtn = document.getElementById("clearFilters");
+
+  if (searchBtn) {
+    searchBtn.addEventListener("click", performRegulationsSearch);
+  }
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      if (state.ui.selectAllCities) {
+        state.ui.selectAllCities.checked = false;
+      }
+      if (state.ui.cityFilter) {
+        state.ui.cityFilter.disabled = false;
+        state.ui.cityFilter.value = "";
+      }
+      if (state.ui.zoneFilter) state.ui.zoneFilter.value = "";
+      if (state.ui.zoneTypeFilter) state.ui.zoneTypeFilter.value = "";
+      if (state.ui.aduFilter) state.ui.aduFilter.value = "";
+      if (state.ui.daduFilter) state.ui.daduFilter.value = "";
+      if (state.ui.ownerOccFilter) state.ui.ownerOccFilter.value = "";
+      if (state.ui.searchInput) state.ui.searchInput.value = "";
+      populateZoneFilterForCity("");
+      performRegulationsSearch();
+    });
+  }
+
+  // Initial population: show all rows but only after user explicitly searches
 }
 
-// =========================================
-// GENERIC FILTERING FOR ZONING ROWS
-// =========================================
+function populateFilterSelect(selectEl, rows, headerLabel) {
+  if (!selectEl) return;
+  const headerIdx = state.zoning.headers.findIndex(
+    h => h && h.toString().toLowerCase().trim() === headerLabel.toLowerCase().trim()
+  );
+  if (headerIdx === -1) return;
 
-function filterZoningRows(options) {
-  const {
-    city,
-    zone,
-    zoneType,
-    adu,
-    dadu,
-    ownerOcc,
-    search,
-    selectAllCities,
-  } = options;
+  const values = Array.from(
+    new Set(
+      rows
+        .map(r => safeText(r[headerIdx]).trim())
+        .filter(v => v)
+    )
+  ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
 
-  const rows = state.zoning.rows;
+  selectEl.innerHTML = "";
+  const baseOpt = document.createElement("option");
+  baseOpt.value = "";
+  baseOpt.textContent = "Any";
+  selectEl.appendChild(baseOpt);
+
+  values.forEach(v => {
+    const opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = v;
+    selectEl.appendChild(opt);
+  });
+}
+
+function populateZoneFilterForCity(city) {
+  if (!state.ui.zoneFilter || !state.initialized.zoningLoaded) return;
+
+  const zoneHeaderIdx = state.zoning.headers.findIndex(
+    h => h && h.toString().toLowerCase().trim() === COL.zone.toLowerCase().trim()
+  );
+  const cityHeaderIdx = state.zoning.headers.findIndex(
+    h => h && h.toString().toLowerCase().trim() === COL.city.toLowerCase().trim()
+  );
+
+  if (zoneHeaderIdx === -1) return;
+
+  let rows = state.zoning.rows;
+  if (city && cityHeaderIdx !== -1) {
+    rows = rows.filter(
+      r =>
+        safeText(r[cityHeaderIdx]).trim().toLowerCase() ===
+        city.toLowerCase()
+    );
+  }
+
+  const zones = Array.from(
+    new Set(
+      rows.map(r => safeText(r[zoneHeaderIdx]).trim()).filter(z => z)
+    )
+  ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+
+  state.ui.zoneFilter.innerHTML = "";
+  const baseOpt = document.createElement("option");
+  baseOpt.value = "";
+  baseOpt.textContent = city ? "All zones in city" : "All zones";
+  state.ui.zoneFilter.appendChild(baseOpt);
+
+  zones.forEach(z => {
+    const opt = document.createElement("option");
+    opt.value = z;
+    opt.textContent = z;
+    state.ui.zoneFilter.appendChild(opt);
+  });
+}
+
+function performRegulationsSearch() {
+  if (!state.initialized.zoningLoaded) return;
+  if (!state.ui.regTableBody) return;
+
+  const cityVal = state.ui.cityFilter
+    ? state.ui.cityFilter.value.trim().toLowerCase()
+    : "";
+  const zoneVal = state.ui.zoneFilter
+    ? state.ui.zoneFilter.value.trim().toLowerCase()
+    : "";
+  const zoneTypeVal = state.ui.zoneTypeFilter
+    ? state.ui.zoneTypeFilter.value.trim().toLowerCase()
+    : "";
+  const aduVal = state.ui.aduFilter
+    ? state.ui.aduFilter.value.trim().toLowerCase()
+    : "";
+  const daduVal = state.ui.daduFilter
+    ? state.ui.daduFilter.value.trim().toLowerCase()
+    : "";
+  const ownerVal = state.ui.ownerOccFilter
+    ? state.ui.ownerOccFilter.value.trim().toLowerCase()
+    : "";
+  const searchTerm = state.ui.searchInput
+    ? state.ui.searchInput.value.trim().toLowerCase()
+    : "";
+
   const cityIdx = headerIndex("city");
   const zoneIdx = headerIndex("zone");
   const zoneTypeIdx = headerIndex("zoneType");
@@ -329,359 +550,98 @@ function filterZoningRows(options) {
   const daduIdx = headerIndex("daduAllowed");
   const ownerIdx = headerIndex("ownerOcc");
 
-  const searchLower = (search || "").toLowerCase().trim();
-
-  return rows.filter((row) => {
-    // City
-    if (!selectAllCities && city && cityIdx !== -1) {
-      const v = (row[cityIdx] || "").trim();
-      if (v !== city) return false;
+  let filtered = state.zoning.rows.filter(row => {
+    if (cityVal && cityIdx !== -1) {
+      const v = safeText(row[cityIdx]).trim().toLowerCase();
+      if (v !== cityVal) return false;
+    }
+    if (zoneVal && zoneIdx !== -1) {
+      const v = safeText(row[zoneIdx]).trim().toLowerCase();
+      if (v !== zoneVal) return false;
+    }
+    if (zoneTypeVal && zoneTypeIdx !== -1) {
+      const v = safeText(row[zoneTypeIdx]).trim().toLowerCase();
+      if (v !== zoneTypeVal) return false;
+    }
+    if (aduVal && aduIdx !== -1) {
+      const v = safeText(row[aduIdx]).trim().toLowerCase();
+      if (v !== aduVal) return false;
+    }
+    if (daduVal && daduIdx !== -1) {
+      const v = safeText(row[daduIdx]).trim().toLowerCase();
+      if (v !== daduVal) return false;
+    }
+    if (ownerVal && ownerIdx !== -1) {
+      const v = safeText(row[ownerIdx]).trim().toLowerCase();
+      if (v !== ownerVal) return false;
     }
 
-    // Zone
-    if (zone && zoneIdx !== -1) {
-      const v = (row[zoneIdx] || "").trim();
-      if (v !== zone) return false;
-    }
-
-    // Zone type
-    if (zoneType && zoneTypeIdx !== -1) {
-      const v = (row[zoneTypeIdx] || "").trim();
-      if (v !== zoneType) return false;
-    }
-
-    // ADU allowed
-    if (adu && aduIdx !== -1) {
-      const v = (row[aduIdx] || "").trim();
-      if (v !== adu) return false;
-    }
-
-    // DADU allowed
-    if (dadu && daduIdx !== -1) {
-      const v = (row[daduIdx] || "").trim();
-      if (v !== dadu) return false;
-    }
-
-    // Owner occupancy
-    if (ownerOcc && ownerIdx !== -1) {
-      const v = (row[ownerIdx] || "").trim();
-      if (v !== ownerOcc) return false;
-    }
-
-    // Free-text search across all cells
-    if (searchLower) {
-      const haystack = row.join(" ").toLowerCase();
-      if (!haystack.includes(searchLower)) return false;
+    if (searchTerm) {
+      const hay = row.join(" ").toLowerCase();
+      if (!hay.includes(searchTerm)) return false;
     }
 
     return true;
   });
-}
 
-// =========================================
-// REGULATIONS TABLE RENDERING
-// =========================================
-
-const DISPLAY_COLUMNS = [
-  {
-    key: "city",
-    label: "City",
-    render(row) {
-      return getCell(row, "city");
-    },
-  },
-  {
-    key: "zone",
-    label: "Zone & type",
-    render(row) {
-      const zone = getCell(row, "zone");
-      const type = getCell(row, "zoneType");
-      return type ? `${zone} – ${type}` : zone;
-    },
-  },
-  {
-    key: "adu",
-    label: "ADU / DADU",
-    render(row) {
-      const adu = getCell(row, "aduAllowed");
-      const dadu = getCell(row, "daduAllowed");
-      const owner = getCell(row, "ownerOcc");
-
-      const parts = [];
-      if (adu) parts.push(`ADU: ${adu}`);
-      if (dadu) parts.push(`DADU: ${dadu}`);
-      if (owner) parts.push(`Owner occ: ${owner}`);
-      return parts.join(" · ");
-    },
-  },
-  {
-    key: "lot",
-    label: "Lot & intensity",
-    render(row) {
-      const minLot = getCell(row, "minLotSize");
-      const density = getCell(row, "density");
-      const far = getCell(row, "maxFAR");
-      const coverage = getCell(row, "maxLotCoverage");
-
-      const bits = [];
-      if (minLot) bits.push(`Min lot: ${minLot} sf`);
-      if (density) bits.push(`Density: ${density}`);
-      if (far) bits.push(`Max FAR: ${far}`);
-      if (coverage) bits.push(`Lot coverage: ${coverage}%`);
-      return bits.join(" · ");
-    },
-  },
-  {
-    key: "parking",
-    label: "Parking",
-    render(row) {
-      const required = getCell(row, "aduParkingRequired");
-      const transit = getCell(row, "aduParkingTransitExempt");
-      const parts = [];
-      if (required) parts.push(`ADU parking: ${required}`);
-      if (transit) parts.push(`Transit exemption: ${transit}`);
-      return parts.join(" · ");
-    },
-  },
-  {
-    key: "sizeHeight",
-    label: "Size & height",
-    render(row) {
-      const maxSize = getCell(row, "maxADUSize");
-      const maxPct = getCell(row, "maxADUSizePct");
-      const maxADUHeight = getCell(row, "maxADUHeight");
-      const maxDADUHeight = getCell(row, "maxDADUHeight");
-
-      const bits = [];
-      if (maxSize) bits.push(`Max ADU: ${maxSize} sf`);
-      if (maxPct) bits.push(`Max %: ${maxPct}`);
-      if (maxADUHeight) bits.push(`ADU ht: ${maxADUHeight} ft`);
-      if (maxDADUHeight) bits.push(`DADU ht: ${maxDADUHeight} ft`);
-      return bits.join(" · ");
-    },
-  },
-  {
-    key: "setbacks",
-    label: "DADU setbacks",
-    render(row) {
-      const rear = getCell(row, "daduRear");
-      const side = getCell(row, "daduSideLotLine");
-      const street = getCell(row, "daduStreetSide");
-      const fromPrincipal = getCell(row, "daduFromPrincipal");
-
-      const bits = [];
-      if (rear) bits.push(`Rear: ${rear}`);
-      if (side) bits.push(`Side: ${side}`);
-      if (street) bits.push(`Street: ${street}`);
-      if (fromPrincipal) bits.push(`From primary: ${fromPrincipal}`);
-      return bits.join(" · ");
-    },
-  },
-  {
-    key: "notes",
-    label: "Notes & code",
-    render(row) {
-      const greenscape = getCell(row, "greenscapeNotes");
-      const fees = getCell(row, "impactFees");
-      const reviewed = getCell(row, "lastReviewed");
-
-      const bits = [];
-      if (greenscape) bits.push(greenscape);
-      if (fees) bits.push(`Fees: ${fees}`);
-      if (reviewed) bits.push(`Last reviewed: ${reviewed}`);
-      return bits.join(" · ");
-    },
-  },
-];
-
-function buildTableHeader() {
-  const thead = document.getElementById("tableHead");
-  if (!thead) return;
-  thead.innerHTML = "";
-
-  const tr = document.createElement("tr");
-  DISPLAY_COLUMNS.forEach((col) => {
-    const th = document.createElement("th");
-    th.textContent = col.label;
-    tr.appendChild(th);
-  });
-  thead.appendChild(tr);
-}
-
-function renderRegulationsTable() {
-  const tbody = document.getElementById("tableBody");
-  const summary = state.ui.summaryEl || document.getElementById("summary");
-  const tableWrapper = state.ui.tableWrapper || document.getElementById("regTableWrapper");
-  const placeholder = state.ui.placeholder || document.getElementById("regPlaceholder");
-  
-  if (!tbody) {
-    console.error("Table body element not found");
-    return;
-  }
-
-  const rows = state.zoning.filteredRows || [];
-  const total = state.zoning.rows.length;
-
-  // Clear existing content
+  const tbody = state.ui.regTableBody;
   tbody.innerHTML = "";
 
-  if (!rows.length) {
-    // Hide table, show placeholder
-    if (tableWrapper) {
-      tableWrapper.classList.add("hidden");
+  if (!filtered.length) {
+    if (state.ui.regResultsPlaceholder) {
+      state.ui.regResultsPlaceholder.style.display = "block";
     }
-    if (placeholder) {
-      placeholder.style.display = "block";
-      placeholder.innerHTML =
-        '<h3>No Results Found</h3><p>Try adjusting your filters or search terms.</p>';
-    }
-
-    if (summary) {
-      summary.textContent =
-        "No matching regulations. Adjust or clear your filters.";
+    if (state.ui.regTableWrapper) {
+      state.ui.regTableWrapper.classList.add("hidden");
     }
     return;
   }
 
-  // We have rows: show table, hide placeholder
-  if (tableWrapper) {
-    tableWrapper.classList.remove("hidden");
+  if (state.ui.regResultsPlaceholder) {
+    state.ui.regResultsPlaceholder.style.display = "none";
   }
-  if (placeholder) {
-    placeholder.style.display = "none";
+  if (state.ui.regTableWrapper) {
+    state.ui.regTableWrapper.classList.remove("hidden");
   }
 
-  // Respect max row cap to keep the UI responsive on very large CSVs
-  const sliceCount = Math.min(rows.length, MAX_REG_ROWS);
-  const rowsToRender = rows.slice(0, sliceCount);
+  // Render full header row dynamically so all columns show
+  const regTable = tbody.closest("table");
+  if (regTable) {
+    const thead = regTable.querySelector("thead");
+    if (thead) {
+      thead.innerHTML = "";
+      const tr = document.createElement("tr");
+      state.zoning.headers.forEach(h => {
+        const th = document.createElement("th");
+        th.textContent = safeText(h);
+        tr.appendChild(th);
+      });
+      thead.appendChild(tr);
+    }
+  }
 
-  // Render each row
-  rowsToRender.forEach((row) => {
+  // Render body
+  filtered.forEach(row => {
     const tr = document.createElement("tr");
-    DISPLAY_COLUMNS.forEach((col) => {
+    state.zoning.headers.forEach((_, idx) => {
       const td = document.createElement("td");
-      try {
-        const rendered = col.render(row);
-        td.textContent = rendered || "—";
-      } catch (error) {
-        console.error(`Error rendering column ${col.key}:`, error);
-        td.textContent = "—";
-      }
+      td.textContent = safeText(row[idx]);
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
   });
-
-  // Update summary
-  if (summary) {
-    if (rows.length === total && rows.length <= MAX_REG_ROWS) {
-      summary.textContent = `Showing all ${rows.length} regulation(s).`;
-    } else if (rows.length > MAX_REG_ROWS) {
-      summary.textContent = `Showing first ${sliceCount} of ${rows.length} matching regulation(s). Add filters to narrow further.`;
-    } else {
-      summary.textContent = `Showing ${rows.length} of ${total} regulation(s).`;
-    }
-  }
 }
 
-// =========================================
-// REGULATIONS UI: FILTERS & SEARCH
-// =========================================
+/* =========================================================
+   LOT-LEVEL FEASIBILITY CHECKER
+   ========================================================= */
 
-function fillSelect(id, colKey, placeholderLabel) {
-  const el = document.getElementById(id);
-  if (!el) return;
-
-  const idx = headerIndex(colKey);
-  if (idx === -1) return;
-
-  const values = new Set();
-  for (const row of state.zoning.rows) {
-    const v = (row[idx] || "").trim();
-    if (v) values.add(v);
-  }
-
-  const sorted = Array.from(values).sort((a, b) =>
-    a.localeCompare(b, undefined, { sensitivity: "base" })
-  );
-
-  el.innerHTML = "";
-
-  // Optional placeholder / "all" option
-  const opt0 = document.createElement("option");
-  opt0.value = "";
-  opt0.textContent = placeholderLabel || "All";
-  el.appendChild(opt0);
-
-  sorted.forEach((v) => {
-    const opt = document.createElement("option");
-    opt.value = v;
-    opt.textContent = v;
-    el.appendChild(opt);
-  });
-}
-// -----------------------------------------
-// Helpers for feasibility UI
-// -----------------------------------------
-
-// Populate the Zone dropdown based on the chosen city
-function updateFeasZoneOptions() {
-  const citySelect = document.getElementById("feasCity");
-  const zoneSelect = document.getElementById("feasZone");
-  if (!citySelect || !zoneSelect) return;
-
-  const city = (citySelect.value || "").trim();
-  zoneSelect.innerHTML = "";
-
-  const baseOption = document.createElement("option");
-  if (!city) {
-    baseOption.value = "";
-    baseOption.textContent = "Select a city first";
-    zoneSelect.appendChild(baseOption);
-    zoneSelect.disabled = true;
-    return;
-  }
-
-  const rows = state.zoning.byCity.get(city) || [];
-  const zoneIdx = headerIndex("zone");
-  if (zoneIdx === -1 || !rows.length) {
-    baseOption.value = "";
-    baseOption.textContent = "No zones found for this city";
-    zoneSelect.appendChild(baseOption);
-    zoneSelect.disabled = true;
-    return;
-  }
-
-  const zones = Array.from(
-    new Set(
-      rows
-        .map((row) => (row[zoneIdx] || "").toString().trim())
-        .filter((z) => z)
-    )
-  ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-
-  baseOption.value = "";
-  baseOption.textContent = "All zones in city";
-  zoneSelect.appendChild(baseOption);
-
-  zones.forEach((z) => {
-    const opt = document.createElement("option");
-    opt.value = z;
-    opt.textContent = z;
-    zoneSelect.appendChild(opt);
-  });
-
-  zoneSelect.disabled = false;
-}
 function buildFeasDiagramShell() {
   const container = document.getElementById("feasDiagram");
   if (!container) return;
-
-  // Only initialize once
   if (container.dataset.initialized === "true") return;
   container.dataset.initialized = "true";
 
-  // Make sure the container has some height even before CSS kicks in
   container.style.minHeight = "260px";
   container.style.display = "flex";
   container.style.alignItems = "stretch";
@@ -706,14 +666,12 @@ function buildFeasDiagramShell() {
           <span class="adu-label" id="aduLabel">ADU footprint</span>
         </div>
 
-        <!-- Simple handles just for visual affordance -->
         <div class="resize-handle lot-width-handle" id="lotWidthHandle" title="Lot width"></div>
         <div class="resize-handle lot-depth-handle" id="lotDepthHandle" title="Lot depth"></div>
       </div>
     </div>
   `;
 
-  // Lightweight hover feedback on handles (no heavy drag logic)
   const lotBox = document.getElementById("lotBox");
   const widthHandle = document.getElementById("lotWidthHandle");
   const depthHandle = document.getElementById("lotDepthHandle");
@@ -735,7 +693,7 @@ function buildFeasDiagramShell() {
   }
 }
 
-// Data → diagram geometry
+// Data → diagram geometry, incorporating setbacks
 function renderFeasibilityDiagram(zoneRow, inputs) {
   const lotBox = document.getElementById("lotBox");
   const buildableRect = document.getElementById("buildableRect");
@@ -745,8 +703,9 @@ function renderFeasibilityDiagram(zoneRow, inputs) {
   const buildableLabel = document.getElementById("buildableLabel");
   const primaryLabel = document.getElementById("primaryLabel");
   const aduLabel = document.getElementById("aduLabel");
+  const diagramContainer = document.getElementById("feasDiagram");
 
-  if (!lotBox || !buildableRect || !primaryRect || !aduRect) return;
+  if (!lotBox || !buildableRect || !primaryRect || !aduRect || !diagramContainer) return;
 
   const {
     lotSize,
@@ -755,13 +714,13 @@ function renderFeasibilityDiagram(zoneRow, inputs) {
     houseWidth,
     houseDepth,
     aduSize,
-    hasAlley,
+    hasAlley
   } = inputs;
 
-  const fmtInt = (n) =>
+  const fmtInt = n =>
     isNaN(n) || n <= 0 ? "—" : Math.round(n).toLocaleString();
 
-  // Normalized lot dimensions
+  // Fallback to square lot if dimensions missing
   let w = !isNaN(lotWidth) && lotWidth > 0 ? lotWidth : Math.sqrt(lotSize || 1);
   let d = !isNaN(lotDepth) && lotDepth > 0 ? lotDepth : Math.sqrt(lotSize || 1);
   if (!w || !d) {
@@ -769,144 +728,115 @@ function renderFeasibilityDiagram(zoneRow, inputs) {
     d = 100;
   }
 
-  // Grab DADU-related setback cells
-  const rawRear = getCell(zoneRow, "daduRear");
-  const rawSide = getCell(zoneRow, "daduSideLotLine");
-  const rawStreet = getCell(zoneRow, "daduStreetSide");
-  const rawFromPrimary = getCell(zoneRow, "daduFromPrincipal");
+  // Parse DADU setbacks from zoning row
+  const rearStr = getCell(zoneRow, "daduRear");
+  const sideStr = getCell(zoneRow, "daduSideLotLine");
+  const streetStr = getCell(zoneRow, "daduStreetSide");
+  const fromPrimaryStr = getCell(zoneRow, "daduFromPrincipal");
 
-  const numFromText = (txt) => {
+  const numFromText = txt => {
     if (!txt) return NaN;
     const match = String(txt).match(/([0-9.]+)/);
     return match ? parseFloat(match[1]) : NaN;
   };
 
-  let rearFt = numFromText(rawRear);
-  let sideFt = numFromText(rawSide);
-  let frontFt = numFromText(rawFromPrimary);
+  let rearFt = numFromText(rearStr);
+  let sideFt = numFromText(sideStr);
+  const streetFt = numFromText(streetStr);
+  const fromPrimaryFt = numFromText(fromPrimaryStr);
 
   if (isNaN(rearFt)) rearFt = 10;
   if (isNaN(sideFt)) sideFt = 5;
-  if (isNaN(frontFt)) frontFt = 15;
 
-  // Alley access → slightly relax rear setback visually
   if (hasAlley) {
     rearFt = Math.max(rearFt * 0.7, 5);
   }
 
-  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+  const frontFt = fromPrimaryFt && !isNaN(fromPrimaryFt) ? fromPrimaryFt : rearFt;
 
-  const sidePct = clamp((sideFt / w) * 100, 0, 40);
-  const frontPct = clamp((frontFt / d) * 100, 0, 40);
-  const rearPct = clamp((rearFt / d) * 100, 0, 40);
+  // Convert to percentages of lot dimensions
+  const sidePct = Math.max(0, Math.min(40, (sideFt / w) * 100));
+  const frontPct = Math.max(0, Math.min(40, (frontFt / d) * 100));
+  const rearPct = Math.max(0, Math.min(40, (rearFt / d) * 100));
 
-  const buildableWidthPct = clamp(100 - sidePct * 2, 20, 96);
-  const buildableHeightPct = clamp(100 - frontPct - rearPct, 20, 96);
+  const buildableWidthPct = Math.max(20, 100 - sidePct * 2);
+  const buildableHeightPct = Math.max(20, 100 - frontPct - rearPct);
 
-  // Position buildable envelope
-  Object.assign(buildableRect.style, {
-    position: "absolute",
-    left: `${sidePct}%`,
-    right: `${sidePct}%`,
-    top: `${frontPct}%`,
-    bottom: `${rearPct}%`,
-  });
+  // Buildable envelope
+  buildableRect.style.position = "absolute";
+  buildableRect.style.left = `${sidePct}%`;
+  buildableRect.style.right = `${sidePct}%`;
+  buildableRect.style.top = `${frontPct}%`;
+  buildableRect.style.bottom = `${rearPct}%`;
 
-  // Primary footprint from inputs or generic proportion
+  // Primary home footprint
   let primaryWidthPct = 35;
   let primaryHeightPct = 30;
 
   if (!isNaN(houseWidth) && houseWidth > 0) {
-    primaryWidthPct = clamp(
-      (houseWidth / w) * buildableWidthPct,
+    primaryWidthPct = Math.max(
       15,
-      Math.min(60, buildableWidthPct)
+      Math.min(60, (houseWidth / w) * buildableWidthPct)
     );
   }
   if (!isNaN(houseDepth) && houseDepth > 0) {
-    primaryHeightPct = clamp(
-      (houseDepth / d) * buildableHeightPct,
+    primaryHeightPct = Math.max(
       15,
-      Math.min(50, buildableHeightPct)
+      Math.min(50, (houseDepth / d) * buildableHeightPct)
     );
   }
 
-  Object.assign(primaryRect.style, {
-    position: "absolute",
-    left: `${sidePct + 5}%`,
-    top: `${frontPct + 5}%`,
-    width: `${primaryWidthPct}%`,
-    height: `${primaryHeightPct}%`,
-  });
+  primaryRect.style.position = "absolute";
+  primaryRect.style.left = `${sidePct + 5}%`;
+  primaryRect.style.top = `${frontPct + 5}%`;
+  primaryRect.style.width = `${primaryWidthPct}%`;
+  primaryRect.style.height = `${primaryHeightPct}%`;
 
-  // ADU footprint from target size vs lot size
+  // ADU footprint
   let aduWidthPct = 22;
   let aduHeightPct = 22;
 
   if (!isNaN(aduSize) && aduSize > 0 && !isNaN(lotSize) && lotSize > 0) {
     const footprintRatio = Math.min(aduSize / lotSize, 0.35);
-    const sideShare = Math.sqrt(footprintRatio);
-
-    aduWidthPct = clamp(sideShare * buildableWidthPct * 1.2, 10, 30);
-    aduHeightPct = clamp(sideShare * buildableHeightPct * 1.2, 10, 30);
+    const side = Math.sqrt(footprintRatio);
+    aduWidthPct = Math.max(10, Math.min(30, side * buildableWidthPct * 1.2));
+    aduHeightPct = Math.max(10, Math.min(30, side * buildableHeightPct * 1.2));
   }
 
-  const aduLeftBase = sidePct + buildableWidthPct * 0.55;
-  let aduTopBase = frontPct + buildableHeightPct * 0.35;
+  aduRect.style.position = "absolute";
+  aduRect.style.width = `${aduWidthPct}%`;
+  aduRect.style.height = `${aduHeightPct}%`;
+  aduRect.style.left = `${100 - sidePct - aduWidthPct - 5}%`;
+  aduRect.style.top = `${100 - rearPct - aduHeightPct - 5}%`;
 
-  if (hasAlley) {
-    // With alley, bias the ADU further back in the lot
-    aduTopBase = frontPct + buildableHeightPct * 0.55;
-  }
-
-  Object.assign(aduRect.style, {
-    position: "absolute",
-    left: `${aduLeftBase}%`,
-    top: `${aduTopBase}%`,
-    width: `${aduWidthPct}%`,
-    height: `${aduHeightPct}%`,
-  });
-
-  // Labels: lot + buildable + primary + ADU
+  // Labels
   if (lotLabel) {
-    lotLabel.textContent = `Lot • ${fmtInt(lotSize)} sf`;
+    lotLabel.textContent = `Lot: ${fmtInt(lotSize)} sf`;
   }
-
   if (buildableLabel) {
-    const maxCoveragePct = getNumeric(zoneRow, "maxLotCoverage");
-    let coverageText = "";
-    if (!isNaN(lotSize) && !isNaN(maxCoveragePct) && maxCoveragePct > 0) {
-      const coverageFraction =
-        maxCoveragePct > 1 ? maxCoveragePct / 100 : maxCoveragePct;
-      const maxFootprint = lotSize * coverageFraction;
-      coverageText = ` · Max footprint (coverage): ${fmtInt(maxFootprint)} sf`;
-    }
-    buildableLabel.textContent = `Buildable area (approx) – Lot: ${fmtInt(
-      lotSize
-    )} sf${coverageText}`;
+    buildableLabel.textContent = `Buildable envelope (setbacks approx. ${
+      fmtInt(frontFt)
+    }′ front / ${fmtInt(sideFt)}′ side / ${fmtInt(rearFt)}′ rear${
+      !isNaN(streetFt) ? `, ${fmtInt(streetFt)}′ street side` : ""
+    })`;
   }
-
   if (primaryLabel) {
-    const homeFootprint =
-      !isNaN(houseWidth) && !isNaN(houseDepth)
-        ? houseWidth * houseDepth
-        : NaN;
-    primaryLabel.textContent = `Primary home • ${
-      isNaN(homeFootprint) ? "footprint not specified" : `${fmtInt(homeFootprint)} sf`
+    primaryLabel.textContent = `Primary home${
+      !isNaN(houseWidth) && !isNaN(houseDepth) && houseWidth && houseDepth
+        ? ` · ${fmtInt(houseWidth)}′ × ${fmtInt(houseDepth)}′`
+        : ""
+    }`;
+  }
+  if (aduLabel) {
+    aduLabel.textContent = `ADU footprint${
+      !isNaN(aduSize) && aduSize ? ` · ${fmtInt(aduSize)} sf` : ""
     }`;
   }
 
-  if (aduLabel) {
-    const maxADUSize = getNumeric(zoneRow, "maxADUSize");
-    let limitText = "";
-    if (!isNaN(maxADUSize) && maxADUSize > 0) {
-      limitText = ` / Max ADU: ${fmtInt(maxADUSize)} sf`;
-    }
-    aduLabel.textContent = `ADU • ${fmtInt(aduSize)} sf${limitText}`;
-  }
+  diagramContainer.dataset.status = inputs.status || "unknown";
 }
 
-// Detailed "report" panel
+// Detailed textual report
 function renderFeasibilityDetails(zoneRow, context) {
   const detailsEl = document.getElementById("feasibilityDetails");
   if (!detailsEl) return;
@@ -914,6 +844,8 @@ function renderFeasibilityDetails(zoneRow, context) {
   const {
     city,
     zone,
+    zoneType,
+    status,
     lotSize,
     lotWidth,
     lotDepth,
@@ -921,668 +853,110 @@ function renderFeasibilityDetails(zoneRow, context) {
     houseDepth,
     aduSize,
     hasTransit,
-    hasAlley,
-    status,
+    hasAlley
   } = context;
-
-  const fmt = (n, suffix = "") =>
-    isNaN(n) || n <= 0 ? "—" : `${Math.round(n).toLocaleString()}${suffix}`;
-  const get = (key) => getCell(zoneRow, key) || "—";
-
-  const zoneType = get("zoneType");
-  const minLot = get("minLotSize");
-  const density = get("density");
-  const far = get("maxFAR");
-  const coverage = get("maxLotCoverage");
-  const aduAllowed = get("aduAllowed");
-  const daduAllowed = get("daduAllowed");
-  const owner = get("ownerOcc");
-  const maxSize = get("maxADUSize");
-  const maxPct = get("maxADUSizePct");
-  const maxADUHeight = get("maxADUHeight");
-  const maxDADUHeight = get("maxDADUHeight");
-  const rear = get("daduRear");
-  const side = get("daduSideLotLine");
-  const street = get("daduStreetSide");
-  const fromPrimary = get("daduFromPrincipal");
-  const parkingReq = get("aduParkingRequired");
-  const parkingTransit = get("aduParkingTransitExempt");
-  const greenscape = get("greenscapeNotes");
-  const impactFees = get("impactFees");
-  const lastReviewed = get("lastReviewed");
-
-  const statusLabel =
-    status === "yes"
-      ? "Generally feasible"
-      : status === "maybe"
-      ? "Potentially feasible with constraints"
-      : status === "no"
-      ? "Not clearly feasible in this row"
-      : "Needs review";
-
-  const heading = `${city || ""}${zone ? ` – ${zone}` : ""}${
-    zoneType && zoneType !== "—" ? ` (${zoneType})` : ""
-  }`;
-
-  detailsEl.innerHTML = `
-    <h3>Feasibility report: ${heading}</h3>
-    <p class="feasibility-status-tag">Status: ${statusLabel}</p>
-    <dl class="feasibility-report">
-      <div class="feasibility-metric">
-        <dt>Lot inputs</dt>
-        <dd>
-          Lot size: ${fmt(lotSize, " sf")} · Width: ${fmt(
-    lotWidth,
-    " ft"
-  )} · Depth: ${fmt(lotDepth, " ft")}
-          <br/>Existing home: ${fmt(houseWidth, " ft")} (width) × ${fmt(
-    houseDepth,
-    " ft"
-  )} (depth)
-        </dd>
-      </div>
-
-      <div class="feasibility-metric">
-        <dt>Target ADU</dt>
-        <dd>Target size: ${fmt(aduSize, " sf")} · Size limit (row): ${
-    maxSize || "—"
-  } · % of primary/lot limit: ${maxPct || "—"}</dd>
-      </div>
-
-      <div class="feasibility-metric">
-        <dt>Intensity (from dataset)</dt>
-        <dd>
-          Min lot size: ${minLot || "—"} · Density: ${density || "—"}
-          <br/>Max FAR: ${far || "—"} · Max lot coverage: ${coverage || "—"}
-        </dd>
-      </div>
-
-      <div class="feasibility-metric">
-        <dt>ADU &amp; DADU permissions</dt>
-        <dd>
-          ADU allowed: ${aduAllowed || "—"} · DADU allowed: ${
-    daduAllowed || "—"
-  }
-          <br/>Owner occupancy: ${owner || "—"}
-        </dd>
-      </div>
-
-      <div class="feasibility-metric">
-        <dt>Height limits</dt>
-        <dd>
-          Max ADU height: ${maxADUHeight || "—"} · Max DADU height: ${
-    maxDADUHeight || "—"
-  }
-        </dd>
-      </div>
-
-      <div class="feasibility-metric">
-        <dt>DADU setbacks</dt>
-        <dd>
-          Rear: ${rear || "—"} · Side: ${side || "—"} · Street: ${
-    street || "—"
-  } · From primary: ${fromPrimary || "—"}
-          <br/>Alley access: ${hasAlley ? "Yes (assumed in diagram)" : "No"}
-        </dd>
-      </div>
-
-      <div class="feasibility-metric">
-        <dt>Parking</dt>
-        <dd>
-          ADU parking requirement: ${parkingReq || "—"}
-          <br/>Transit-based relief: ${parkingTransit || "—"}
-          <br/>Transit radius in inputs: ${
-            hasTransit ? "Checked" : "Not checked"
-          }
-        </dd>
-      </div>
-
-      <div class="feasibility-metric">
-        <dt>Landscape, fees &amp; notes</dt>
-        <dd>
-          Greenscape / open space notes: ${greenscape || "—"}
-          <br/>Impact fees: ${impactFees || "—"}
-          <br/>Last reviewed: ${lastReviewed || "—"}
-        </dd>
-      </div>
-    </dl>
-    <p class="feasibility-disclaimer">
-      This diagram and report are a simplified interpretation of the zoning dataset you provided.
-      They are intended as a screening tool only and do not replace a full zoning and building code review
-      or direct confirmation with local planning staff.
-    </p>
-  `;
-}
-
-function initRegulationsFilters() {
-  fillSelect("cityFilter", "city", "All cities");
-  fillSelect("zoneFilter", "zone", "All zones");
-  fillSelect("zoneTypeFilter", "zoneType", "All zone types");
-  fillSelect("aduFilter", "aduAllowed", "Any ADU");
-  fillSelect("daduFilter", "daduAllowed", "Any DADU");
-  fillSelect("ownerOccFilter", "ownerOcc", "Any owner-occupancy");
-}
-
-function performRegulationsSearch() {
-  if (!state.initialized.zoningLoaded) return;
-
-  const city = (document.getElementById("cityFilter")?.value || "").trim();
-  const zone = (document.getElementById("zoneFilter")?.value || "").trim();
-  const zoneType =
-    (document.getElementById("zoneTypeFilter")?.value || "").trim();
-  const adu = (document.getElementById("aduFilter")?.value || "").trim();
-  const dadu = (document.getElementById("daduFilter")?.value || "").trim();
-  const ownerOcc =
-    (document.getElementById("ownerOccFilter")?.value || "").trim();
-  const search =
-    (document.getElementById("searchInput")?.value || "").toLowerCase();
-  const selectAllCities = !!state.ui.selectAllCities?.checked;
-
-  const filtered = filterZoningRows({
-    city,
-    zone,
-    zoneType,
-    adu,
-    dadu,
-    ownerOcc,
-    search,
-    selectAllCities,
-  });
-
-  state.zoning.filteredRows = filtered;
-  buildTableHeader();
-  renderRegulationsTable();
-}
-
-function clearRegulationsFilters() {
-  if (state.ui.selectAllCities) {
-    state.ui.selectAllCities.checked = false;
-  }
-
-  const ids = [
-    "cityFilter",
-    "zoneFilter",
-    "zoneTypeFilter",
-    "aduFilter",
-    "daduFilter",
-    "ownerOccFilter",
-    "searchInput",
-  ];
-
-  ids.forEach((id) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    // For select and input, just reset to empty
-    el.value = "";
-    if (id === "cityFilter") {
-      el.disabled = false;
-    }
-  });
-
-  // Hide table, show placeholder
-  if (state.ui.tableWrapper) {
-    state.ui.tableWrapper.classList.add("hidden");
-  }
-  if (state.ui.placeholder) {
-    state.ui.placeholder.style.display = "block";
-    state.ui.placeholder.innerHTML =
-      '<h3>Ready to Search</h3><p>Select filters above, then click "Search Regulations" to view results.</p>';
-  }
-
-  // Clear table body & header
-  const thead = document.getElementById("tableHead");
-  const tbody = document.getElementById("tableBody");
-  if (thead) thead.innerHTML = "";
-  if (tbody) tbody.innerHTML = "";
-
-  // Reset summary
-  const summary = state.ui.summaryEl || document.getElementById("summary");
-  if (summary) {
-    summary.textContent =
-      "Data and diagrams are simplified for feasibility screening and do not replace a detailed code review or conversation with planning staff.";
-  }
-
-  state.zoning.filteredRows = [];
-}
-
-function initRegulationsUI() {
-  state.ui.selectAllCities = document.getElementById("selectAllCities");
-  state.ui.searchButton = document.getElementById("searchRegulationsBtn");
-  state.ui.placeholder = document.getElementById("regPlaceholder");
-  state.ui.tableWrapper = document.getElementById("regTableWrapper");
-  state.ui.summaryEl = document.getElementById("summary");
-
-  // Initial placeholder state
-  if (state.ui.placeholder && state.ui.tableWrapper) {
-    state.ui.placeholder.style.display = "block";
-    state.ui.placeholder.innerHTML =
-      '<h3>Ready to Search</h3><p>Select filters above, then click "Search Regulations" to view results.</p>';
-    state.ui.tableWrapper.classList.add("hidden");
-  }
-
-  // Select-all functionality
-  if (state.ui.selectAllCities) {
-    state.ui.selectAllCities.addEventListener("change", function () {
-      const cityFilter = document.getElementById("cityFilter");
-      if (!cityFilter) return;
-      if (this.checked) {
-        cityFilter.value = "";
-        cityFilter.disabled = true;
-      } else {
-        cityFilter.disabled = false;
-      }
-    });
-  }
-
-  // Search button
-  if (state.ui.searchButton) {
-    state.ui.searchButton.addEventListener("click", () => {
-      performRegulationsSearch();
-    });
-  }
-
-  // Clear filters button
-  const clearBtn = document.getElementById("clearFilters");
-  if (clearBtn) {
-    clearBtn.addEventListener("click", () => {
-      clearRegulationsFilters();
-    });
-  }
-
-  // Enter key triggers search
-  const searchInput = document.getElementById("searchInput");
-  if (searchInput) {
-    searchInput.addEventListener("keypress", (e) => {
-      if (e.key === "Enter") {
-        performRegulationsSearch();
-      }
-    });
-  }
-}
-
-// =========================================
-// CITY SCORECARDS (PER-CITY SUMMARY)
-// =========================================
-
-function computeCityScore(cityName, rows) {
-  if (!rows || !rows.length) return { score: 0, grade: "?" };
-
-  const aduIdx = headerIndex("aduAllowed");
-  const daduIdx = headerIndex("daduAllowed");
-  const ownerIdx = headerIndex("ownerOcc");
-
-  let aduYes = 0;
-  let daduYes = 0;
-  let ownerNo = 0;
-
-  rows.forEach((row) => {
-    const adu = aduIdx !== -1 ? String(row[aduIdx] || "").toLowerCase() : "";
-    const dadu = daduIdx !== -1 ? String(row[daduIdx] || "").toLowerCase() : "";
-    const owner =
-      ownerIdx !== -1 ? String(row[ownerIdx] || "").toLowerCase() : "";
-
-    if (adu.includes("yes")) aduYes++;
-    if (dadu.includes("yes")) daduYes++;
-    if (owner.includes("no")) ownerNo++;
-  });
-
-  const n = rows.length;
-  const aduScore = n ? aduYes / n : 0;
-  const daduScore = n ? daduYes / n : 0;
-  const ownerFlexScore = n ? ownerNo / n : 0;
-
-  // Simple weighted score [0–100]
-  const score = Math.round(
-    (aduScore * 0.4 + daduScore * 0.4 + ownerFlexScore * 0.2) * 100
-  );
-
-  let grade = "C";
-  if (score >= 85) grade = "A";
-  else if (score >= 70) grade = "B";
-  else if (score >= 50) grade = "C";
-  else grade = "D";
-
-  return { score, grade, aduYes, daduYes, n };
-}
-
-function renderCityScorecards() {
-  const container = document.getElementById("cityScorecards");
-  if (!container || !state.zoning.byCity.size) return;
-
-  container.innerHTML = "";
-
-  const cities = Array.from(state.zoning.byCity.keys()).sort((a, b) =>
-    a.localeCompare(b, undefined, { sensitivity: "base" })
-  );
-
-  cities.forEach((city) => {
-    const rows = state.zoning.byCity.get(city) || [];
-    const metrics = computeCityScore(city, rows);
-
-    // FIXED: Use scorecard-item class instead of scorecard
-    const card = document.createElement("article");
-    card.className = "scorecard-item";
-
-    card.innerHTML = `
-      <header class="scorecard-header">
-        <h3 class="scorecard-city">${city}</h3>
-        <div class="scorecard-grade">${metrics.grade}</div>
-      </header>
-      <div class="scorecard-bar-wrap">
-        <div class="scorecard-bar" style="width: ${metrics.score}%"></div>
-      </div>
-      <ul class="scorecard-bullets">
-        <li>ADU allowed in ${metrics.aduYes} of ${metrics.n} zones</li>
-        <li>DADU allowed in ${metrics.daduYes} of ${metrics.n} zones</li>
-        <li>Flexibility score: ${metrics.score}/100</li>
-      </ul>
-    `;
-
-    // Add click handler to the entire card
-    card.style.cursor = 'pointer';
-    card.addEventListener('click', function() {
-      const cityFilter = document.getElementById("cityFilter");
-      if (cityFilter) {
-        cityFilter.value = city;
-        if (state.ui.selectAllCities) {
-          state.ui.selectAllCities.checked = false;
-          cityFilter.disabled = false;
-        }
-      }
-      performRegulationsSearch();
-      
-      // Scroll to regulations section
-      const regsSection = document.querySelector('.filters-card');
-      if (regsSection && regsSection.scrollIntoView) {
-        regsSection.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    });
-
-    container.appendChild(card);
-  });
-}
-
-
-// Helpers reused across feasibility logic
-function headerIndex(colName) {
-  if (!state.zoning.headers) return -1;
-  return state.zoning.headers.findIndex(
-    (h) => h.toLowerCase().trim() === colName.toLowerCase().trim()
-  );
-}
-
-function getCell(row, colName) {
-  const idx = headerIndex(colName);
-  if (idx === -1 || !row) return "";
-  return (row[idx] ?? "").toString().trim();
-}
-
-function getNumeric(row, colName) {
-  const raw = getCell(row, colName);
-  if (!raw) return NaN;
-  const cleaned = raw.replace(/[^0-9.\-]/g, "");
-  return cleaned ? parseFloat(cleaned) : NaN;
-}
-
-// Build the static diagram “shell” inside #feasDiagram
-function buildFeasDiagramShell() {
-  const container = document.getElementById("feasDiagram");
-  if (!container) return;
-
-  // Only build once
-  if (container.dataset.initialized === "true") return;
-  container.dataset.initialized = "true";
-
-  container.innerHTML = `
-    <div class="parcel-stage">
-      <div class="lot-box" id="lotBox">
-        <div class="lot-label" id="lotLabel">Lot: — sf</div>
-        <div class="buildable-box" id="buildableRect">
-          <div class="buildable-label" id="buildableLabel">Buildable area</div>
-        </div>
-        <div class="primary-box" id="primaryRect">
-          <div class="primary-label" id="primaryLabel">Primary home</div>
-        </div>
-        <div class="adu-box" id="aduRect">
-          <div class="adu-label" id="aduLabel">ADU</div>
-        </div>
-
-        <!-- Handles along edges for a bit of interactivity -->
-        <div class="resize-handle" id="lotWidthHandle"></div>
-        <div class="resize-handle" id="lotDepthHandle"></div>
-      </div>
-    </div>
-  `;
-
-  // Very lightweight handle behavior – no heavy listeners
-  const lotBox = document.getElementById("lotBox");
-  const widthHandle = document.getElementById("lotWidthHandle");
-  const depthHandle = document.getElementById("lotDepthHandle");
-
-  if (lotBox && widthHandle && depthHandle) {
-    widthHandle.addEventListener("mouseenter", () => {
-      lotBox.classList.add("lot-highlight-width");
-    });
-    widthHandle.addEventListener("mouseleave", () => {
-      lotBox.classList.remove("lot-highlight-width");
-    });
-
-    depthHandle.addEventListener("mouseenter", () => {
-      lotBox.classList.add("lot-highlight-depth");
-    });
-    depthHandle.addEventListener("mouseleave", () => {
-      lotBox.classList.remove("lot-highlight-depth");
-    });
-  }
-}
-
-// Render the visual diagram based on lot + zone snapshot
-function renderFeasibilityDiagram({
-  lotSize,
-  lotWidth,
-  lotDepth,
-  houseWidth,
-  houseDepth,
-  status,
-  hasAlley,
-}) {
-  const lotBox = document.getElementById("lotBox");
-  const primaryRect = document.getElementById("primaryRect");
-  const aduRect = document.getElementById("aduRect");
-  const buildableRect = document.getElementById("buildableRect");
-  const lotLabel = document.getElementById("lotLabel");
-  const buildableLabel = document.getElementById("buildableLabel");
-  const aduLabel = document.getElementById("aduLabel");
-  const primaryLabel = document.getElementById("primaryLabel");
-  const container = document.getElementById("feasDiagram");
-  if (!lotBox || !primaryRect || !aduRect || !buildableRect || !container) {
-    return;
-  }
-
-  // Simple normalized sizing so shapes look reasonable across lot sizes
-  const baseLot = Math.max(lotSize || 4000, 2000); // sf
-  const lotScale = Math.sqrt((lotSize || baseLot) / baseLot);
-  const primaryScale =
-    houseWidth && houseDepth ? Math.sqrt((houseWidth * houseDepth) / 1000) : 1;
-  const aduScale = Math.sqrt((Math.min(lotSize || 4000, 800) || 800) / 800);
-
-  // Use percentages so it stays responsive in CSS
-  lotBox.style.setProperty("--lot-width-pct", "100%");
-  lotBox.style.setProperty("--lot-height-pct", "70%");
-
-  const primaryWidthPct = Math.min(40 * primaryScale, 60);
-  const primaryDepthPct = Math.min(35 * primaryScale, 50);
-
-  primaryRect.style.width = `${primaryWidthPct}%`;
-  primaryRect.style.height = `${primaryDepthPct}%`;
-  primaryRect.style.left = "10%";
-  primaryRect.style.top = "15%";
-
-  const aduWidthPct = Math.min(25 * aduScale, 40);
-  const aduDepthPct = Math.min(25 * aduScale, 40);
-
-  // Place ADU near rear, shifted if alley=true
-  aduRect.style.width = `${aduWidthPct}%`;
-  aduRect.style.height = `${aduDepthPct}%`;
-  aduRect.style.left = hasAlley ? "55%" : "60%";
-  aduRect.style.top = hasAlley ? "55%" : "60%";
-
-  // Buildable rectangle = inset from lot edges (conceptual setbacks)
-  buildableRect.style.left = "10%";
-  buildableRect.style.top = "20%";
-  buildableRect.style.width = "80%";
-  buildableRect.style.height = "60%";
-
-  // Labels
-  if (lotLabel) {
-    lotLabel.textContent = `Lot: ${
-      isNaN(lotSize) ? "—" : `${lotSize.toLocaleString()} sf`
-    }`;
-  }
-  if (buildableLabel) {
-    buildableLabel.textContent = "Buildable envelope (conceptual)";
-  }
-  if (primaryLabel) {
-    primaryLabel.textContent = `Primary home${
-      houseWidth && houseDepth
-        ? ` · ${houseWidth}′ × ${houseDepth}′`
-        : ""
-    }`;
-  }
-  if (aduLabel) {
-    aduLabel.textContent = `ADU footprint (approx.)`;
-  }
-
-  container.dataset.status = status || "unknown";
-}
-
-// Render the detailed text report
-function renderFeasibilityDetails({
-  city,
-  zone,
-  zoneType,
-  status,
-  lotSize,
-  lotWidth,
-  lotDepth,
-  houseWidth,
-  houseDepth,
-  aduSize,
-  zoneRow,
-  hasTransit,
-  hasAlley,
-}) {
-  const detailsEl = document.getElementById("feasibilityDetails");
-  if (!detailsEl) return;
 
   const fmt = (v, suffix = "") =>
     isNaN(v) || v == null ? "—" : `${v.toLocaleString()}${suffix}`;
 
   const minLot = getNumeric(zoneRow, "minLotSize");
-  const far = getCell(zoneRow, "maxFAR") || getCell(zoneRow, "FAR");
-  const coverage = getCell(zoneRow, "maxLotCoverage");
-  const density = getCell(zoneRow, "maxDensity");
   const maxSize = getNumeric(zoneRow, "maxADUSize");
-  const maxPct = getCell(zoneRow, "aduSizeAsPctPrincipal");
+  const maxDADU = getNumeric(zoneRow, "maxDADUSize");
+  const maxCoverage = getNumeric(zoneRow, "maxLotCoverage");
+  const maxFar = getNumeric(zoneRow, "maxFAR");
+  const maxHeight = getNumeric(zoneRow, "maxHeight");
 
   const aduAllowed = getCell(zoneRow, "aduAllowed");
   const daduAllowed = getCell(zoneRow, "daduAllowed");
-  const owner = getCell(zoneRow, "ownerOcc");
-
-  const maxADUHeight = getCell(zoneRow, "aduHeight");
-  const maxDADUHeight = getCell(zoneRow, "daduHeight");
-
-  const rear = getCell(zoneRow, "daduRear");
-  const side = getCell(zoneRow, "daduSideLotLine");
-  const street = getCell(zoneRow, "daduStreetSide");
-  const fromPrimary = getCell(zoneRow, "daduFromPrincipal");
-
-  const parkingReq = getCell(zoneRow, "aduParkingRequired");
+  const ownerOcc = getCell(zoneRow, "ownerOcc");
+  const parkingReq = getCell(zoneRow, "aduParking");
   const parkingTransit = getCell(zoneRow, "aduParkingTransitExempt");
-  const greenscape = getCell(zoneRow, "greenscapeNotes");
+  const greenscape = getCell(zoneRow, "greenscape");
   const impactFees = getCell(zoneRow, "impactFees");
   const lastReviewed = getCell(zoneRow, "lastReviewed");
 
-  const statusLabel =
-    status === "yes"
-      ? "Generally feasible"
-      : status === "maybe"
-      ? "Potentially feasible with constraints"
-      : status === "no"
-      ? "Not clearly feasible in this row"
-      : "Needs review";
+  const rearStr = getCell(zoneRow, "daduRear");
+  const sideStr = getCell(zoneRow, "daduSideLotLine");
+  const streetStr = getCell(zoneRow, "daduStreetSide");
+  const fromPrimaryStr = getCell(zoneRow, "daduFromPrincipal");
 
-  const heading = `${city || ""}${zone ? ` – ${zone}` : ""}${
-    zoneType ? ` (${zoneType})` : ""
-  }`;
+  let statusLabel = "Screening only";
+  if (status === "yes") statusLabel = "Generally feasible (screening)";
+  else if (status === "maybe") statusLabel = "Potentially feasible with caveats";
+  else if (status === "no") statusLabel = "Not clearly feasible from this row";
 
   detailsEl.innerHTML = `
-    <h3>Feasibility report: ${heading}</h3>
-    <p class="feasibility-status-tag">Status: ${statusLabel}</p>
-    <dl class="feasibility-report">
+    <h3>Lot-level feasibility report</h3>
+    <dl class="feasibility-metrics">
       <div class="feasibility-metric">
-        <dt>Lot inputs</dt>
+        <dt>Context</dt>
         <dd>
-          Lot size: ${fmt(lotSize, " sf")} · Width: ${fmt(lotWidth, " ft")} · Depth: ${fmt(
+          City: ${safeText(city) || "—"}<br/>
+          Zone: ${safeText(zone) || "—"}${
+            zoneType ? ` (${safeText(zoneType)})` : ""
+          }<br/>
+          Screening status: ${statusLabel}
+        </dd>
+      </div>
+
+      <div class="feasibility-metric">
+        <dt>Lot &amp; existing home</dt>
+        <dd>
+          Lot size: ${fmt(lotSize, " sf")}<br/>
+          Lot width × depth: ${fmt(lotWidth, " ft")} × ${fmt(
     lotDepth,
     " ft"
-  )}
-          <br/>Existing home: ${fmt(houseWidth, " ft")} (width) × ${fmt(
+  )}<br/>
+          Existing home: ${fmt(houseWidth, " ft")} × ${fmt(
     houseDepth,
     " ft"
-  )} (depth)
+  )}<br/>
+          Target ADU size: ${fmt(aduSize, " sf")}
         </dd>
       </div>
 
       <div class="feasibility-metric">
-        <dt>Target ADU</dt>
+        <dt>Key zoning standards (from dataset)</dt>
         <dd>
-          Target size: ${fmt(aduSize, " sf")}
-          · Size limit (row): ${maxSize || "—"}
-          · % of primary limit: ${maxPct || "—"}
+          Minimum lot size: ${fmt(minLot, " sf")}<br/>
+          Maximum ADU size: ${fmt(maxSize, " sf")}<br/>
+          Maximum detached ADU size: ${fmt(maxDADU, " sf")}<br/>
+          Maximum lot coverage: ${
+            isNaN(maxCoverage) ? "—" : `${maxCoverage}%`
+          }<br/>
+          Maximum FAR: ${isNaN(maxFar) ? "—" : maxFar}<br/>
+          Maximum building height: ${fmt(maxHeight, " ft")}
         </dd>
       </div>
 
       <div class="feasibility-metric">
-        <dt>Intensity (from dataset)</dt>
+        <dt>ADU allowances</dt>
         <dd>
-          Min lot size: ${minLot || "—"} · Density: ${density || "—"}
-          <br/>Max FAR: ${far || "—"} · Max lot coverage: ${coverage || "—"}
+          ADU allowed: ${aduAllowed || "—"}<br/>
+          Detached ADU allowed: ${daduAllowed || "—"}<br/>
+          Owner-occupancy requirement: ${ownerOcc || "—"}
         </dd>
       </div>
 
       <div class="feasibility-metric">
-        <dt>ADU &amp; DADU permissions</dt>
+        <dt>DADU setbacks &amp; separation</dt>
         <dd>
-          ADU allowed: ${aduAllowed || "—"} · DADU allowed: ${daduAllowed || "—"}
-          <br/>Owner occupancy: ${owner || "—"}
-        </dd>
-      </div>
-
-      <div class="feasibility-metric">
-        <dt>Height limits</dt>
-        <dd>
-          Max ADU height: ${maxADUHeight || "—"} · Max DADU height: ${
-    maxDADUHeight || "—"
-  }
-        </dd>
-      </div>
-
-      <div class="feasibility-metric">
-        <dt>DADU setbacks</dt>
-        <dd>
-          Rear: ${rear || "—"} · Side: ${side || "—"} · Street: ${street || "—"}
-          · From primary: ${fromPrimary || "—"}
-          <br/>Alley access: ${hasAlley ? "Yes (assumed in diagram)" : "No"}
+          Rear yard setback: ${rearStr || "—"}<br/>
+          Side lot line setback: ${sideStr || "—"}<br/>
+          Street-side setback: ${streetStr || "—"}<br/>
+          Separation from primary: ${fromPrimaryStr || "—"}<br/>
+          Alley access flagged in inputs: ${
+            hasAlley ? "Yes (rear relaxed visually)" : "No"
+          }
         </dd>
       </div>
 
       <div class="feasibility-metric">
         <dt>Parking</dt>
         <dd>
-          ADU parking requirement: ${parkingReq || "—"}
-          <br/>Transit-based relief: ${parkingTransit || "—"}
-          <br/>Transit radius flag in inputs: ${
+          ADU parking requirement: ${parkingReq || "—"}<br/>
+          Transit-based relief (dataset): ${parkingTransit || "—"}<br/>
+          Transit radius flag in inputs: ${
             hasTransit ? "Checked" : "Not checked"
           }
         </dd>
@@ -1591,60 +965,54 @@ function renderFeasibilityDetails({
       <div class="feasibility-metric">
         <dt>Landscape, fees &amp; notes</dt>
         <dd>
-          Greenscape / open space notes: ${greenscape || "—"}
-          <br/>Impact fees: ${impactFees || "—"}
-          <br/>Last reviewed: ${lastReviewed || "—"}
+          Greenscape / open space notes: ${greenscape || "—"}<br/>
+          Impact fees: ${impactFees || "—"}<br/>
+          Dataset last reviewed: ${lastReviewed || "—"}
         </dd>
       </div>
     </dl>
     <p class="feasibility-disclaimer">
       This diagram and report are a simplified visual interpretation of the dataset you provided.
-      They are intended for screening only and do not replace a full zoning and building code review
+      They support feasibility screening only and do not replace a full zoning / building code review
       or direct confirmation with planning staff.
     </p>
   `;
 }
 
-// =========================================
-// LOT-LEVEL FEASIBILITY CHECKER
-// =========================================
-
-// Uses the earlier helpers defined above:
-// - headerIndex(colKey) with COL mapping
-// - getCell(row, colKey)
-// - getNumeric(row, colKey)
-// - buildFeasDiagramShell()
-// - renderFeasibilityDiagram(zoneRow, inputs)
-// - renderFeasibilityDetails(zoneRow, context)
-
 function runFeasibilityCheck() {
-  if (!state.initialized.zoningLoaded) {
-    return;
-  }
+  if (!state.initialized.zoningLoaded) return;
 
   try {
-    const city =
-      (document.getElementById("feasCity")?.value || "").toString().trim();
-    const zone =
-      (document.getElementById("feasZone")?.value || "").toString().trim();
+    const city = safeText(
+      document.getElementById("feasCity")?.value || ""
+    ).trim();
+    const zone = safeText(
+      document.getElementById("feasZone")?.value || ""
+    ).trim();
 
-    const lotSizeStr =
-      (document.getElementById("feasLotSize")?.value || "").trim();
-    const lotWidthStr =
-      (document.getElementById("feasLotWidth")?.value || "").trim();
-    const lotDepthStr =
-      (document.getElementById("feasLotDepth")?.value || "").trim();
-    const houseWidthStr =
-      (document.getElementById("feasHouseWidth")?.value || "").trim();
-    const houseDepthStr =
-      (document.getElementById("feasHouseDepth")?.value || "").trim();
-    const aduSizeStr =
-      (document.getElementById("feasADUSize")?.value || "").trim();
+    const lotSizeStr = safeText(
+      document.getElementById("feasLotSize")?.value || ""
+    ).trim();
+    const lotWidthStr = safeText(
+      document.getElementById("feasLotWidth")?.value || ""
+    ).trim();
+    const lotDepthStr = safeText(
+      document.getElementById("feasLotDepth")?.value || ""
+    ).trim();
+    const houseWidthStr = safeText(
+      document.getElementById("feasHouseWidth")?.value || ""
+    ).trim();
+    const houseDepthStr = safeText(
+      document.getElementById("feasHouseDepth")?.value || ""
+    ).trim();
+    const aduSizeStr = safeText(
+      document.getElementById("feasADUSize")?.value || ""
+    ).trim();
 
     const hasTransit = !!document.getElementById("feasTransit")?.checked;
     const hasAlley = !!document.getElementById("feasAlley")?.checked;
 
-    const parseNum = (str) => {
+    const parseNum = str => {
       if (!str) return NaN;
       const cleaned = str.replace(/[^0-9.\-]/g, "");
       return cleaned ? parseFloat(cleaned) : NaN;
@@ -1657,7 +1025,7 @@ function runFeasibilityCheck() {
     const houseDepth = parseNum(houseDepthStr);
     const aduSize = parseNum(aduSizeStr);
 
-    // Fallback: approximate lot size from width × depth if needed
+    // Approximate lot size from width × depth if needed
     if ((isNaN(lotSize) || !lotSize) && !isNaN(lotWidth) && !isNaN(lotDepth)) {
       lotSize = lotWidth * lotDepth;
     }
@@ -1669,109 +1037,96 @@ function runFeasibilityCheck() {
     if (detailsEl) detailsEl.innerHTML = "";
     if (diagramEl) diagramEl.dataset.status = "";
 
-    if (!city || isNaN(lotSize) || isNaN(aduSize)) {
+    if (!city || !zone) {
       if (summaryEl) {
-        summaryEl.innerHTML = `
-          <p class="feasibility-headline" data-status="incomplete">
-            Pick a city and (optionally) a zone, then enter lot size and target ADU size
-            to see a feasibility screen.
-          </p>`;
+        summaryEl.innerHTML =
+          "<p class='feasibility-headline' data-status='unknown'>Select a city and zone to run the lot-level feasibility check.</p>";
       }
       return;
     }
 
-    // Find zoning rows for city (+ zone)
-    let rows = state.zoning.byCity.get(city) || [];
-    if (!rows.length) {
+    const cityRows = state.zoning.byCity.get(city) || [];
+    const zoneIdx = headerIndex("zone");
+    const zoneTypeIdx = headerIndex("zoneType");
+
+    const zoneRows = cityRows.filter(r => {
+      const z = zoneIdx !== -1 ? safeText(r[zoneIdx]).trim() : "";
+      return z === zone;
+    });
+
+    if (!zoneRows.length) {
       if (summaryEl) {
-        summaryEl.innerHTML = `
-          <p class="feasibility-headline" data-status="unknown">
-            No zoning rows found for ${city} in the current dataset.
-          </p>`;
+        summaryEl.innerHTML =
+          "<p class='feasibility-headline' data-status='unknown'>No matching zoning rows were found for this city/zone. Check your dataset.</p>";
       }
       return;
     }
 
-    if (zone) {
-      const zoneIdx = headerIndex("zone");
-      if (zoneIdx !== -1) {
-        rows = rows.filter(
-          (row) => (row[zoneIdx] || "").toString().trim() === zone
-        );
-      }
-    }
-
-    if (!rows.length) {
-      if (summaryEl) {
-        summaryEl.innerHTML = `
-          <p class="feasibility-headline" data-status="unknown">
-            No zoning rows matched the selected city + zone combination.
-          </p>`;
-      }
-      return;
-    }
-
-    // Choose a "least restrictive" row as our working snapshot
-    let bestRow = rows[0];
+    // Pick a "best" row: prioritize ADU allowed and highest maximum ADU size
+    let bestRow = zoneRows[0];
     let bestScore = -Infinity;
-
-    rows.forEach((row) => {
-      const minLot = getNumeric(row, "minLotSize");
-      const maxSize = getNumeric(row, "maxADUSize");
-      const aduAllowed = getCell(row, "aduAllowed").toLowerCase();
-      const daduAllowed = getCell(row, "daduAllowed").toLowerCase();
-
+    zoneRows.forEach(r => {
+      const adu = getCell(r, "aduAllowed").toLowerCase();
+      const dadu = getCell(r, "daduAllowed").toLowerCase();
+      const maxSize = getNumeric(r, "maxADUSize");
       let score = 0;
-      if (!isNaN(minLot) && lotSize >= minLot) score += 2;
-      if (!isNaN(maxSize) && aduSize <= maxSize) score += 2;
-      if (aduAllowed.includes("yes")) score += 1;
-      if (daduAllowed.includes("yes")) score += 0.5;
-
+      if (adu.includes("yes")) score += 2;
+      if (dadu.includes("yes")) score += 1;
+      if (!isNaN(maxSize)) score += maxSize / 1000;
       if (score > bestScore) {
         bestScore = score;
-        bestRow = row;
+        bestRow = r;
       }
     });
 
     const minLot = getNumeric(bestRow, "minLotSize");
     const maxSize = getNumeric(bestRow, "maxADUSize");
     const aduAllowed = getCell(bestRow, "aduAllowed");
-    const zoneType = getCell(bestRow, "zoneType");
+    const ownerOcc = getCell(bestRow, "ownerOcc");
+    const parkingTransit = getCell(bestRow, "aduParkingTransitExempt");
 
-    let status = "unknown";
     const lotOK = !isNaN(minLot) ? lotSize >= minLot : true;
     const sizeOK = !isNaN(maxSize) ? aduSize <= maxSize : true;
     const aduYes = aduAllowed.toLowerCase().includes("yes");
 
+    let status = "unknown";
+    let headline = "";
+
     if (!aduYes) {
       status = "no";
+      headline = `ADUs are not clearly allowed in the selected zone row for ${city}. Further code review is required.`;
     } else if (lotOK && sizeOK) {
       status = "yes";
-    } else if (lotOK || sizeOK) {
+      headline = `This lot and ADU size appear generally feasible in at least one zoning row, assuming setbacks, parking, and design standards can be met.`;
+    } else if (!lotOK && sizeOK) {
       status = "maybe";
+      headline = `ADU size is within typical limits, but the lot size is below a recorded minimum. Overlays, variances or updated code may still allow it.`;
+    } else if (lotOK && !sizeOK) {
+      status = "maybe";
+      headline = `Lot size meets a typical minimum, but the ADU size exceeds a recorded maximum. A smaller ADU may be more feasible.`;
     } else {
       status = "no";
+      headline = `Both lot size and ADU size fall outside at least one key standard in this zone. A more detailed code review is needed.`;
+    }
+
+    if (hasTransit && parkingTransit) {
+      headline += ` Transit-based parking relief is flagged in this zone: ${parkingTransit}.`;
+    }
+    if (hasAlley) {
+      headline += ` Alley access is assumed, which often helps with rear-yard siting and parking access.`;
+    }
+    if (ownerOcc) {
+      headline += ` Owner-occupancy in this row is recorded as: ${ownerOcc}.`;
     }
 
     if (summaryEl) {
-      const statusLabel =
-        status === "yes"
-          ? "generally feasible"
-          : status === "maybe"
-          ? "potentially feasible with constraints"
-          : status === "no"
-          ? "not clearly feasible"
-          : "needs review";
-
-      summaryEl.innerHTML = `
-        <p class="feasibility-headline" data-status="${status}">
-          For <strong>${city}</strong>${zone ? `, zone <strong>${zone}</strong>` : ""}:
-          this lot and ADU size appear <strong>${statusLabel}</strong> using the most
-          permissive matching row in your dataset.
-        </p>`;
+      summaryEl.innerHTML = `<p class="feasibility-headline" data-status="${status}">${headline}</p>`;
+    }
+    if (diagramEl) {
+      diagramEl.dataset.status = status;
     }
 
-    // Diagram + report (using the earlier helpers that know about zoneRow)
+    // Ensure diagram shell exists, then update geometry + labels
     buildFeasDiagramShell();
     renderFeasibilityDiagram(bestRow, {
       lotSize,
@@ -1780,14 +1135,16 @@ function runFeasibilityCheck() {
       houseWidth,
       houseDepth,
       aduSize,
+      hasTransit,
       hasAlley,
+      status
     });
 
+    const zoneType = zoneTypeIdx !== -1 ? bestRow[zoneTypeIdx] : "";
     renderFeasibilityDetails(bestRow, {
       city,
       zone,
       zoneType,
-      status,
       lotSize,
       lotWidth,
       lotDepth,
@@ -1796,442 +1153,446 @@ function runFeasibilityCheck() {
       aduSize,
       hasTransit,
       hasAlley,
+      status
     });
   } catch (err) {
-    console.error("Feasibility check error:", err);
-    const summaryEl = document.getElementById("feasibilitySummary");
-    if (summaryEl) {
-      summaryEl.innerHTML = `
-        <p class="feasibility-headline" data-status="error">
-          Something went wrong while running the feasibility check. Check the console
-          for details and confirm that the zoning CSV headers match the columns this
-          tool expects.
-        </p>`;
-    }
+    console.error("Error in runFeasibilityCheck:", err);
   }
 }
 
-// Initialize city + zone selects and wire the Run button + diagram shell
-function initFeasibility() {
-  buildFeasDiagramShell();
+function initFeasibilityUI() {
+  if (!state.initialized.zoningLoaded) return;
 
+  const citySelect = document.getElementById("feasCity");
+  const zoneSelect = document.getElementById("feasZone");
   const runBtn = document.getElementById("runFeasibility");
-  if (runBtn) {
-    runBtn.addEventListener("click", (e) => {
-      e.preventDefault();
-      runFeasibilityCheck();
-    });
-  }
 
-  const feasCity = document.getElementById("feasCity");
-  const feasZone = document.getElementById("feasZone");
-  if (!feasCity || !state.zoning.byCity) return;
-
-  // Initial helper text in the summary area
-  const summaryEl = document.getElementById("feasibilitySummary");
-  if (summaryEl) {
-    summaryEl.innerHTML = `
-      <p class="feasibility-headline" data-status="idle">
-        Choose a city and zone, then enter lot and ADU details to see a feasibility snapshot,
-        diagram, and detailed report.
-      </p>`;
-  }
+  if (!citySelect || !zoneSelect || !runBtn) return;
 
   // Populate cities
   const cities = Array.from(state.zoning.byCity.keys()).sort((a, b) =>
     a.localeCompare(b, undefined, { sensitivity: "base" })
   );
-
-  feasCity.innerHTML = "";
-  const opt0 = document.createElement("option");
-  opt0.value = "";
-  opt0.textContent = "Select a city";
-  feasCity.appendChild(opt0);
-
-  cities.forEach((c) => {
+  citySelect.innerHTML = "";
+  const baseOpt = document.createElement("option");
+  baseOpt.value = "";
+  baseOpt.textContent = "Select city";
+  citySelect.appendChild(baseOpt);
+  cities.forEach(c => {
     const opt = document.createElement("option");
     opt.value = c;
     opt.textContent = c;
-    feasCity.appendChild(opt);
+    citySelect.appendChild(opt);
   });
 
-  // When city changes, populate zone list from that city's rows
-  if (feasZone) {
-    const resetZones = (label) => {
-      feasZone.innerHTML = "";
-      const z0 = document.createElement("option");
-      z0.value = "";
-      z0.textContent = label;
-      feasZone.appendChild(z0);
-    };
+  zoneSelect.innerHTML = "";
+  const baseZoneOpt = document.createElement("option");
+  baseZoneOpt.value = "";
+  baseZoneOpt.textContent = "Choose a city first";
+  zoneSelect.appendChild(baseZoneOpt);
+  zoneSelect.disabled = true;
 
-    resetZones("Select a city first");
+  citySelect.addEventListener("change", () => {
+    const city = safeText(citySelect.value).trim();
+    const rows = state.zoning.byCity.get(city) || [];
+    const zoneIdx = headerIndex("zone");
+    zoneSelect.innerHTML = "";
+    if (!rows.length || zoneIdx === -1) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = rows.length
+        ? "No zones found for this city"
+        : "Choose a city first";
+      zoneSelect.appendChild(opt);
+      zoneSelect.disabled = true;
+      return;
+    }
 
-    feasCity.addEventListener("change", () => {
-      const selectedCity = (feasCity.value || "").trim();
-      if (!selectedCity) {
-        resetZones("Select a city first");
-        return;
-      }
+    const baseOption = document.createElement("option");
+    baseOption.value = "";
+    baseOption.textContent = "All zones in city";
+    zoneSelect.appendChild(baseOption);
 
-      const rows = state.zoning.byCity.get(selectedCity) || [];
-      const zoneIdx = headerIndex("zone");
-      if (zoneIdx === -1) {
-        resetZones("Zones not found for this city");
-        return;
-      }
+    const zones = Array.from(
+      new Set(
+        rows.map(r => safeText(r[zoneIdx]).trim()).filter(z => z)
+      )
+    ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
 
-      const zones = Array.from(
-        new Set(
-          rows
-            .map((row) => (row[zoneIdx] || "").toString().trim())
-            .filter(Boolean)
-        )
-      ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
-
-      resetZones("All zones in city");
-      zones.forEach((z) => {
-        const opt = document.createElement("option");
-        opt.value = z;
-        opt.textContent = z;
-        feasZone.appendChild(opt);
-      });
+    zones.forEach(z => {
+      const opt = document.createElement("option");
+      opt.value = z;
+      opt.textContent = z;
+      zoneSelect.appendChild(opt);
     });
-  }
+
+    zoneSelect.disabled = false;
+  });
+
+  runBtn.addEventListener("click", runFeasibilityCheck);
+
+  // Initialize diagram shell once so user always sees something
+  buildFeasDiagramShell();
 }
 
-// =========================================
-// PERMITS TABLE (BASIC VERSION)
-// =========================================
+/* =========================================================
+   PERMITS TABLE + PAGINATION (5 PER PAGE, 2024–2025 ONLY)
+   ========================================================= */
 
-function initPermitsFilters() {
+function initPermitsUI() {
   if (!state.initialized.permitsLoaded) return;
 
-  const yearFilter = document.getElementById("permitsYearFilter");
-  const cityFilter = document.getElementById("permitsCityFilter");
+  state.ui.permitsCityFilter = document.getElementById("permitsCityFilter");
+  state.ui.permitsYearFilter = document.getElementById("permitsYearFilter");
+  state.ui.permitsSummary = document.getElementById("permitsSummary");
 
-  const headers = state.permits.headers;
-  const rows = state.permits.rows;
+  const permitsTable = document.getElementById("permitsTable");
+  state.ui.permitsTableBody = permitsTable
+    ? permitsTable.querySelector("tbody")
+    : null;
 
-  if (!headers || !headers.length || !rows.length) return;
+  // Build pagination controls dynamically if not present
+  const permitsCard = document.querySelector(".permits-card");
+  if (permitsCard && !document.getElementById("permitsPagerLabel")) {
+    const pager = document.createElement("div");
+    pager.className = "permits-pager";
+    pager.style.display = "flex";
+    pager.style.justifyContent = "flex-end";
+    pager.style.alignItems = "center";
+    pager.style.gap = "0.5rem";
+    pager.style.marginTop = "0.75rem";
 
-  // Try to auto-detect a "year" and "city" column by name
-  const yearColCandidates = ["Year", "PERMIT_YEAR", "IssueYear"];
-  const cityColCandidates = ["City", "CITY", "Jurisdiction"];
+    pager.innerHTML = `
+      <button type="button" id="permitsPrev" class="btn-outline" aria-label="Previous page">← Prev</button>
+      <span id="permitsPageLabel" class="permits-page-label"></span>
+      <button type="button" id="permitsNext" class="btn-outline" aria-label="Next page">Next →</button>
+    `;
 
-  const yearCol =
-    yearColCandidates.find((c) => headers.includes(c)) || null;
-  const cityCol =
-    cityColCandidates.find((c) => headers.includes(c)) || null;
+    const tableWrapper = permitsCard.querySelector(".table-wrapper");
+    if (tableWrapper && tableWrapper.parentNode) {
+      tableWrapper.parentNode.appendChild(pager);
+    } else {
+      permitsCard.appendChild(pager);
+    }
+  }
 
-  // Store so renderPermits can reuse
-  state.permits.yearCol = yearCol;
-  state.permits.cityCol = cityCol;
+  state.ui.permitsPrevBtn = document.getElementById("permitsPrev");
+  state.ui.permitsNextBtn = document.getElementById("permitsNext");
+  state.ui.permitsPagerLabel = document.getElementById("permitsPageLabel");
 
-  // Populate year filter
-  if (yearFilter && yearCol) {
-    const idx = pHeaderIndex(yearCol);
-    const years = new Set();
-    rows.forEach((r) => {
-      const v = (r[idx] || "").toString().trim();
-      if (v) years.add(v);
-    });
-    const sorted = Array.from(years).sort();
-    yearFilter.innerHTML = "";
-    const opt0 = document.createElement("option");
-    opt0.value = "";
-    opt0.textContent = "All years";
-    yearFilter.appendChild(opt0);
-    sorted.forEach((y) => {
-      const opt = document.createElement("option");
-      opt.value = y;
-      opt.textContent = y;
-      yearFilter.appendChild(opt);
+  // Populate filters from dataset (but underlying rows are already 2024–2025)
+  populatePermitsFilters();
+
+  const clearBtn = document.getElementById("permitsClearFilters");
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      if (state.ui.permitsCityFilter) state.ui.permitsCityFilter.value = "";
+      if (state.ui.permitsYearFilter) state.ui.permitsYearFilter.value = "";
+      state.permits.currentPage = 1;
+      state.permits.filtered = state.permits.rows.slice();
+      renderPermitsTable();
     });
   }
 
-  // Populate city filter
-  if (cityFilter && cityCol) {
-    const idx = pHeaderIndex(cityCol);
-    const cities = new Set();
-    rows.forEach((r) => {
-      const v = (r[idx] || "").toString().trim();
-      if (v) cities.add(v);
+  if (state.ui.permitsCityFilter) {
+    state.ui.permitsCityFilter.addEventListener("change", () => {
+      state.permits.currentPage = 1;
+      filterPermits();
     });
-    const sorted = Array.from(cities).sort((a, b) =>
-      a.localeCompare(b, undefined, { sensitivity: "base" })
-    );
+  }
+  if (state.ui.permitsYearFilter) {
+    state.ui.permitsYearFilter.addEventListener("change", () => {
+      state.permits.currentPage = 1;
+      filterPermits();
+    });
+  }
+
+  if (state.ui.permitsPrevBtn) {
+    state.ui.permitsPrevBtn.addEventListener("click", () => {
+      if (state.permits.currentPage > 1) {
+        state.permits.currentPage -= 1;
+        renderPermitsTable();
+      }
+    });
+  }
+  if (state.ui.permitsNextBtn) {
+    state.ui.permitsNextBtn.addEventListener("click", () => {
+      const totalPages = Math.max(
+        1,
+        Math.ceil(state.permits.filtered.length / state.permits.pageSize)
+      );
+      if (state.permits.currentPage < totalPages) {
+        state.permits.currentPage += 1;
+        renderPermitsTable();
+      }
+    });
+  }
+
+  // Initial view
+  filterPermits();
+}
+
+function populatePermitsFilters() {
+  const cityFilter = state.ui.permitsCityFilter;
+  const yearFilter = state.ui.permitsYearFilter;
+  if (!cityFilter && !yearFilter) return;
+
+  const headers = state.permits.headers.map(h =>
+    h ? h.toString().toLowerCase() : ""
+  );
+  const cityIdx = headers.findIndex(h => h.includes("city"));
+  const approvalIdx = headers.findIndex(
+    h =>
+      (h.includes("approval") && h.includes("date")) ||
+      (h.includes("issued") && h.includes("date"))
+  );
+  const yearIdx = headers.findIndex(h => h.includes("year"));
+
+  if (cityFilter && cityIdx !== -1) {
+    const cities = Array.from(
+      new Set(
+        state.permits.rows
+          .map(r => safeText(r[cityIdx]).trim())
+          .filter(v => v)
+      )
+    ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+
     cityFilter.innerHTML = "";
-    const opt0 = document.createElement("option");
-    opt0.value = "";
-    opt0.textContent = "All cities";
-    cityFilter.appendChild(opt0);
-    sorted.forEach((c) => {
+    const base = document.createElement("option");
+    base.value = "";
+    base.textContent = "All cities";
+    cityFilter.appendChild(base);
+    cities.forEach(c => {
       const opt = document.createElement("option");
       opt.value = c;
       opt.textContent = c;
       cityFilter.appendChild(opt);
     });
   }
-function updateFeasZoneOptions() {
-  const citySelect = document.getElementById("feasCity");
-  const zoneSelect = document.getElementById("feasZone");
-  if (!zoneSelect) return;
 
-  const city = (citySelect?.value || "").trim();
+  if (yearFilter) {
+    const years = Array.from(
+      new Set(
+        state.permits.rows
+          .map(r => {
+            if (yearIdx !== -1) {
+              return parseInt(
+                safeText(r[yearIdx]).slice(0, 4),
+                10
+              );
+            }
+            if (approvalIdx !== -1) {
+              const raw = safeText(r[approvalIdx]);
+              const match = raw.match(/(20[0-9]{2})/);
+              return match ? parseInt(match[1], 10) : NaN;
+            }
+            return NaN;
+          })
+          .filter(y => !isNaN(y))
+      )
+    )
+      .filter(y => y >= 2024 && y <= 2025)
+      .sort();
 
-  zoneSelect.innerHTML = "";
-
-  if (!city) {
-    const opt = document.createElement("option");
-    opt.value = "";
-    opt.textContent = "Select a city first";
-    zoneSelect.appendChild(opt);
-    zoneSelect.disabled = true;
-    return;
-  }
-
-  const rows = state.zoning.byCity.get(city) || [];
-  const zoneIdx = headerIndex("zone");
-  const zones = new Set();
-
-  if (zoneIdx !== -1) {
-    rows.forEach((row) => {
-      const z = (row[zoneIdx] || "").toString().trim();
-      if (z) zones.add(z);
+    yearFilter.innerHTML = "";
+    const baseY = document.createElement("option");
+    baseY.value = "";
+    baseY.textContent = "2024–2025 (all)";
+    yearFilter.appendChild(baseY);
+    years.forEach(y => {
+      const opt = document.createElement("option");
+      opt.value = String(y);
+      opt.textContent = String(y);
+      yearFilter.appendChild(opt);
     });
   }
+}
 
-  const baseOption = document.createElement("option");
-  baseOption.value = "";
-  baseOption.textContent = zones.size
-    ? "Any zone in this city"
-    : "No zones found";
-  zoneSelect.appendChild(baseOption);
+function filterPermits() {
+  const headers = state.permits.headers.map(h =>
+    h ? h.toString().toLowerCase() : ""
+  );
 
-  if (!zones.size) {
-    zoneSelect.disabled = true;
-    return;
-  }
+  const cityFilterVal = state.ui.permitsCityFilter
+    ? state.ui.permitsCityFilter.value.trim().toLowerCase()
+    : "";
+  const yearFilterVal = state.ui.permitsYearFilter
+    ? state.ui.permitsYearFilter.value.trim()
+    : "";
 
-  zones.forEach((z) => {
-    const opt = document.createElement("option");
-    opt.value = z;
-    opt.textContent = z;
-    zoneSelect.appendChild(opt);
+  const cityIdx = headers.findIndex(h => h.includes("city"));
+  const yearIdx = headers.findIndex(h => h.includes("year"));
+  const approvalIdx = headers.findIndex(
+    h =>
+      (h.includes("approval") && h.includes("date")) ||
+      (h.includes("issued") && h.includes("date"))
+  );
+
+  state.permits.filtered = state.permits.rows.filter(r => {
+    if (cityFilterVal && cityIdx !== -1) {
+      const c = safeText(r[cityIdx]).trim().toLowerCase();
+      if (c !== cityFilterVal) return false;
+    }
+
+    if (yearFilterVal) {
+      let year = NaN;
+      if (yearIdx !== -1) {
+        year = parseInt(
+          safeText(r[yearIdx]).slice(0, 4),
+          10
+        );
+      } else if (approvalIdx !== -1) {
+        const raw = safeText(r[approvalIdx]);
+        const match = raw.match(/(20[0-9]{2})/);
+        if (match) year = parseInt(match[1], 10);
+      }
+      if (String(year) !== yearFilterVal) return false;
+    }
+
+    return true;
   });
 
-  zoneSelect.disabled = false;
+  state.permits.currentPage = 1;
+  renderPermitsTable();
 }
 
-  // Pagination + filter listeners
-  const yearFilterEl = document.getElementById("permitsYearFilter");
-  const cityFilterEl = document.getElementById("permitsCityFilter");
-  const clearBtn = document.getElementById("permitsClearFilters");
-  const prevBtn = document.getElementById("permitsPrev");
-  const nextBtn = document.getElementById("permitsNext");
+function renderPermitsTable() {
+  if (!state.ui.permitsTableBody) return;
 
-  // Page size + initial page
-  state.permits.pageSize = 5;
-  if (typeof state.permits.currentPage !== "number") {
-    state.permits.currentPage = 1;
-  }
-
-  // Filters reset to page 1
-  if (yearFilterEl) {
-    yearFilterEl.addEventListener("change", () => {
-      state.permits.currentPage = 1;
-      renderPermits();
-    });
-  }
-  if (cityFilterEl) {
-    cityFilterEl.addEventListener("change", () => {
-      state.permits.currentPage = 1;
-      renderPermits();
-    });
-  }
-  if (clearBtn) {
-    clearBtn.addEventListener("click", () => {
-      if (yearFilterEl) yearFilterEl.value = "";
-      if (cityFilterEl) cityFilterEl.value = "";
-      state.permits.filteredRows = state.permits.rows.slice();
-      state.permits.currentPage = 1;
-      renderPermits();
-    });
-  }
-
-  // Prev / Next arrows
-  if (prevBtn) {
-    prevBtn.addEventListener("click", () => {
-      if (!state.initialized.permitsLoaded) return;
-      const current = state.permits.currentPage || 1;
-      if (current > 1) {
-        state.permits.currentPage = current - 1;
-        renderPermits();
-      }
-    });
-  }
-
-  if (nextBtn) {
-    nextBtn.addEventListener("click", () => {
-      if (!state.initialized.permitsLoaded) return;
-      const pageSize = state.permits.pageSize || 5;
-      const total =
-        (state.permits.filteredRows && state.permits.filteredRows.length) ||
-        state.permits.rows.length;
-      const totalPages = Math.max(1, Math.ceil(total / pageSize));
-      const current = state.permits.currentPage || 1;
-      if (current < totalPages) {
-        state.permits.currentPage = current + 1;
-        renderPermits();
-      }
-    });
-  }
-}
-
-function renderPermits() {
-  const tbody = document.getElementById("permitsTableBody");
-  const summary = document.getElementById("permitsSummary");
-  const emptyState = document.getElementById("permitsEmpty");
-  const prevBtn = document.getElementById("permitsPrev");
-  const nextBtn = document.getElementById("permitsNext");
-  const pageLabel = document.getElementById("permitsPageLabel");
-
-  if (!tbody || !state.initialized.permitsLoaded) return;
-
-  const rows = state.permits.rows;
-  const headers = state.permits.headers;
-  let filtered = rows.slice();
-
-  const yearCol = state.permits.yearCol;
-  const cityCol = state.permits.cityCol;
-
-  const yearFilterVal =
-    (document.getElementById("permitsYearFilter")?.value || "").trim();
-  const cityFilterVal =
-    (document.getElementById("permitsCityFilter")?.value || "").trim();
-
-  // Apply filters
-  if (yearCol && yearFilterVal) {
-    const idx = pHeaderIndex(yearCol);
-    filtered = filtered.filter(
-      (r) => (r[idx] || "").toString().trim() === yearFilterVal
-    );
-  }
-  if (cityCol && cityFilterVal) {
-    const idx = pHeaderIndex(cityCol);
-    filtered = filtered.filter(
-      (r) => (r[idx] || "").toString().trim() === cityFilterVal
-    );
-  }
-
-  // Keep a copy of the current filtered set for pagination calculations
-  state.permits.filteredRows = filtered;
-
+  const tbody = state.ui.permitsTableBody;
   tbody.innerHTML = "";
 
-  // No results
-  if (!filtered.length) {
-    if (emptyState) emptyState.hidden = false;
-    if (summary) {
-      summary.textContent =
-        "No permits match the selected filters in the current dataset.";
-    }
-    if (pageLabel) pageLabel.textContent = "No permits";
-    if (prevBtn) prevBtn.disabled = true;
-    if (nextBtn) nextBtn.disabled = true;
-    return;
-  }
-
-  if (emptyState) emptyState.hidden = true;
-
-  // Pagination math
-  const pageSize = state.permits.pageSize || 5;
-  let currentPage = state.permits.currentPage || 1;
-  const total = filtered.length;
+  const total = state.permits.filtered.length;
+  const pageSize = state.permits.pageSize;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(Math.max(state.permits.currentPage, 1), totalPages);
+  state.permits.currentPage = page;
 
-  if (currentPage > totalPages) currentPage = totalPages;
-  if (currentPage < 1) currentPage = 1;
-  state.permits.currentPage = currentPage;
+  const start = (page - 1) * pageSize;
+  const end = Math.min(start + pageSize, total);
+  const slice = state.permits.filtered.slice(start, end);
 
-  const startIndex = (currentPage - 1) * pageSize;
-  const endIndex = Math.min(startIndex + pageSize, total);
-  const rowsToRender = filtered.slice(startIndex, endIndex);
+  const headers = state.permits.headers.map(h => h.toString().toLowerCase());
+  const cityIdx = headers.findIndex(h => h.includes("city"));
+  const projectIdx = headers.findIndex(
+    h => h.includes("project") || h.includes("description")
+  );
+  const aduTypeIdx = headers.findIndex(
+    h => h.includes("adu") && h.includes("type")
+  );
+  const applicantIdx = headers.findIndex(
+    h => h.includes("applicant") || h.includes("owner")
+  );
+  const approvalIdx = headers.findIndex(
+    h =>
+      (h.includes("approval") && h.includes("date")) ||
+      (h.includes("issued") && h.includes("date"))
+  );
+  const statusIdx = headers.findIndex(h => h.includes("status"));
+  const linkIdx = headers.findIndex(
+    h => h.includes("link") || h.includes("url")
+  );
 
-  // Render only the current "page"
-  const maxCols = Math.min(headers.length, 6);
-  rowsToRender.forEach((row) => {
+  slice.forEach(r => {
     const tr = document.createElement("tr");
-    for (let i = 0; i < maxCols; i++) {
+
+    const city = cityIdx !== -1 ? safeText(r[cityIdx]).trim() : "";
+    const project = projectIdx !== -1 ? safeText(r[projectIdx]).trim() : "";
+    const type = aduTypeIdx !== -1 ? safeText(r[aduTypeIdx]).trim() : "";
+    const applicant =
+      applicantIdx !== -1 ? safeText(r[applicantIdx]).trim() : "";
+    const approval =
+      approvalIdx !== -1 ? safeText(r[approvalIdx]).trim() : "";
+    const status =
+      statusIdx !== -1 ? safeText(r[statusIdx]).trim() : "";
+    const link = linkIdx !== -1 ? safeText(r[linkIdx]).trim() : "";
+
+    const cells = [
+      city,
+      project,
+      type,
+      applicant,
+      approval,
+      status,
+      link
+    ];
+
+    cells.forEach((val, idx) => {
       const td = document.createElement("td");
-      td.textContent = row[i] || "—";
+      if (idx === 6 && val) {
+        const a = document.createElement("a");
+        a.href = val;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.textContent = "View permit";
+        td.appendChild(a);
+      } else {
+        td.textContent = val;
+      }
       tr.appendChild(td);
-    }
+    });
+
     tbody.appendChild(tr);
   });
 
-  // Update summary + pagination UI
-  if (summary) {
-    summary.textContent = `Showing ${startIndex + 1}–${endIndex} of ${total} permit(s).`;
+  if (state.ui.permitsSummary) {
+    state.ui.permitsSummary.textContent = total
+      ? `Showing ${start + 1}–${end} of ${total} ADU permits (2024–2025 only)`
+      : "No permits match the filters (2024–2025).";
   }
-  if (pageLabel) {
-    pageLabel.textContent = `Page ${currentPage} of ${totalPages}`;
+
+  if (state.ui.permitsPagerLabel) {
+    state.ui.permitsPagerLabel.textContent = total
+      ? `Page ${page} of ${totalPages}`
+      : "No results";
   }
-  if (prevBtn) {
-    prevBtn.disabled = currentPage <= 1;
+
+  if (state.ui.permitsPrevBtn) {
+    state.ui.permitsPrevBtn.disabled = page <= 1;
   }
-  if (nextBtn) {
-    nextBtn.disabled = currentPage >= totalPages;
+  if (state.ui.permitsNextBtn) {
+    state.ui.permitsNextBtn.disabled = page >= totalPages;
   }
 }
 
+/* =========================================================
+   MAP INITIALIZATION (SAFE IF LEAFLET MISSING)
+   ========================================================= */
 
-// =========================================
-// INIT
-// =========================================
-
-async function initApp() {
-  const summary = document.getElementById("summary");
-
-  try {
-    await loadZoningData();
-  } catch (err) {
-    console.error("Error loading zoning data:", err);
-    if (summary) {
-      summary.textContent =
-        "Error loading zoning data. Check that data.csv exists next to index.html and that it is published.";
-    }
-    // Even if zoning fails, still try to render permits.
-    try {
-      await loadPermitsData();
-      initPermitsFilters();
-      renderPermits();
-    } catch (permErr) {
-      console.warn("Permits also failed to load:", permErr);
-    }
+function initMap() {
+  const mapEl = document.getElementById("map");
+  if (!mapEl) return;
+  if (typeof L === "undefined") {
+    // Leaflet not loaded – fail silently
     return;
   }
 
-  // At this point zoning is loaded.
-  try {
-    await loadPermitsData();
-  } catch (err) {
-    console.warn("Error loading permits data (non-fatal):", err);
-  }
+  const map = L.map("map").setView([47.6, -122.3], 10);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap contributors"
+  }).addTo(map);
 
-  // Initialize UI that depends on zoning data
-  initRegulationsFilters();
-  initRegulationsUI();
-  renderCityScorecards();
-  initFeasibility();
-
-  // Permits UI
-  if (state.initialized.permitsLoaded) {
-    initPermitsFilters();
-    renderPermits();
-  }
+  // You can hook zoning rows / permits markers here later if desired.
 }
 
-// Attach once DOM is ready
-document.addEventListener("DOMContentLoaded", initApp);
+/* =========================================================
+   APP ENTRYPOINT
+   ========================================================= */
+
+async function initApp() {
+  // Load both datasets in parallel
+  await Promise.all([loadZoningCsv(), loadPermitsCsv()]);
+
+  // Initialize UI modules after data present
+  renderCityScorecards();
+  initRegulationsUI();
+  initFeasibilityUI();
+  initPermitsUI();
+  initMap();
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  initApp().catch(err => {
+    console.error("initApp error:", err);
+  });
+});
