@@ -845,35 +845,6 @@ button {
   font-size: var(--size-xs);
 }
 
-.parcel-handle {
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #fff;
-  border: 2px solid rgba(3,30,40,0.85);
-  box-shadow: 0 6px 18px rgba(0,0,0,0.22);
-  cursor: grab;
-}
-
-.parcel-handle--br { right: -10px; bottom: -10px; cursor: se-resize; }
-.parcel-handle--tl { left: -10px; top: -10px; cursor: nw-resize; }
-.parcel-handle--move {
-  right: 6px;
-  top: 6px;
-  width: 18px;
-  height: 18px;
-  display: grid;
-  place-items: center;
-  cursor: move;
-}
-
-.parcel-handle--move::after {
-  content: "≡";
-  font-size: 0.65rem;
-  color: rgba(2,22,31,0.75);
-}
-
 .parcel-primary {
   background: linear-gradient(135deg, #084C61 0%, #0b627d 100%);
 }
@@ -891,30 +862,11 @@ button {
   flex-wrap: wrap;
 }
 
-.legend-entry {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.legend-entry--muted {
-  opacity: 0.55;
-}
-
-.legend-entry--muted .legend-chip {
-  border-style: dotted;
-}
-
 .parcel-footnote {
   margin: 0;
   font-size: var(--size-xs);
   color: var(--text-muted);
   text-align: center;
-}
-
-.parcel-footnote--alert {
-  color: var(--clay-500);
-  font-weight: 700;
 }
 
 .legend-chip {
